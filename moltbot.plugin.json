@@ -3,9 +3,185 @@
   "name": "RingCentral",
   "description": "RingCentral Team Messaging channel plugin for Moltbot",
   "channels": ["ringcentral"],
+  "uiHints": {
+    "enabled": {
+      "label": "Enable RingCentral"
+    },
+    "selfOnly": {
+      "label": "Self Only Mode",
+      "help": "When enabled, only respond to your own messages in Personal chat. Disable to allow Team/Group chats."
+    },
+    "groupPolicy": {
+      "label": "Group Policy",
+      "help": "How to handle messages from Teams/Groups. Use 'allowlist' to only respond to specific teams."
+    },
+    "groups": {
+      "label": "Allowed Teams",
+      "help": "Configure which Teams can trigger the AI. Add Team IDs to enable them.",
+      "itemLabel": "Team"
+    },
+    "groups.*": {
+      "label": "Team Configuration"
+    },
+    "groups.*.enabled": {
+      "label": "Enabled"
+    },
+    "groups.*.requireMention": {
+      "label": "Require @Mention",
+      "help": "When enabled, the bot only responds when mentioned in this team."
+    },
+    "groups.*.systemPrompt": {
+      "label": "System Prompt",
+      "help": "Custom system prompt for this team. Appended to the agent's default prompt."
+    },
+    "groups.*.users": {
+      "label": "Allowed Users",
+      "help": "List of user IDs allowed to trigger the bot in this team. Leave empty to allow all."
+    },
+    "requireMention": {
+      "label": "Require @Mention (Global)",
+      "help": "When enabled, the bot only responds when mentioned in group chats."
+    },
+    "credentials": {
+      "label": "API Credentials",
+      "advanced": true
+    },
+    "credentials.clientId": {
+      "label": "Client ID",
+      "sensitive": true
+    },
+    "credentials.clientSecret": {
+      "label": "Client Secret",
+      "sensitive": true
+    },
+    "credentials.jwt": {
+      "label": "JWT Token",
+      "sensitive": true
+    },
+    "credentials.server": {
+      "label": "API Server",
+      "placeholder": "https://platform.ringcentral.com"
+    },
+    "dmPolicy": {
+      "label": "DM Policy",
+      "advanced": true
+    },
+    "allowFrom": {
+      "label": "DM Allowlist",
+      "advanced": true
+    },
+    "mediaMaxMb": {
+      "label": "Max Media Size (MB)",
+      "advanced": true
+    },
+    "textChunkLimit": {
+      "label": "Text Chunk Limit",
+      "advanced": true
+    }
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
-    "properties": {}
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "description": "Enable the RingCentral channel"
+      },
+      "selfOnly": {
+        "type": "boolean",
+        "description": "Only respond to JWT user in Personal chat (default: true)"
+      },
+      "groupPolicy": {
+        "type": "string",
+        "enum": ["disabled", "allowlist", "open"],
+        "description": "Policy for handling group/team messages"
+      },
+      "groups": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable this team"
+            },
+            "requireMention": {
+              "type": "boolean",
+              "description": "Require @mention to trigger"
+            },
+            "systemPrompt": {
+              "type": "string",
+              "description": "Custom system prompt for this team"
+            },
+            "users": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Allowed user IDs in this team"
+            }
+          }
+        },
+        "description": "Team/Group configurations keyed by Team ID"
+      },
+      "requireMention": {
+        "type": "boolean",
+        "description": "Require @mention in group chats (global default)"
+      },
+      "credentials": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "clientId": {
+            "type": "string"
+          },
+          "clientSecret": {
+            "type": "string"
+          },
+          "jwt": {
+            "type": "string"
+          },
+          "server": {
+            "type": "string"
+          }
+        }
+      },
+      "dmPolicy": {
+        "type": "string",
+        "enum": ["disabled", "allowlist", "pairing", "open"]
+      },
+      "allowFrom": {
+        "type": "array",
+        "items": {
+          "type": ["string", "number"]
+        }
+      },
+      "groupAllowFrom": {
+        "type": "array",
+        "items": {
+          "type": ["string", "number"]
+        }
+      },
+      "mediaMaxMb": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "textChunkLimit": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "name": {
+        "type": "string"
+      },
+      "accounts": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object"
+        }
+      },
+      "defaultAccount": {
+        "type": "string"
+      }
+    }
   }
 }
