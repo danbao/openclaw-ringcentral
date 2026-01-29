@@ -25,8 +25,8 @@ importers:
         version: 4.3.6
     devDependencies:
       clawdbot:
-        specifier: ^2026.1.24
-        version: 2026.1.24(@types/express@5.0.6)(devtools-protocol@0.0.1575685)(typescript@5.9.3)
+        specifier: 2026.1.24-3
+        version: 2026.1.24-3(@types/express@5.0.6)(devtools-protocol@0.0.1575685)(typescript@5.9.3)
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -1748,8 +1748,8 @@ packages:
     resolution: {integrity: sha512-Wdy2Igu8OcBpI2pZePZ5oWjPC38tmDVx5WKUXKwlLYkA0ozo85sLsLvkBbBn/sZaSCMFOGZJ14fvW9t5/d7kdA==}
     engines: {node: '>=8'}
 
-  clawdbot@2026.1.24:
-    resolution: {integrity: sha512-foszbNXzk743kQBx2Nfc2KNlStZyBAVAYLQJ+KaONh009r8oB1a74kQ8wTnKX+SDNaQ9MvaE9tOisVUi+H3F+Q==}
+  clawdbot@2026.1.24-3:
+    resolution: {integrity: sha512-zt9BzhWXduq8ZZR4rfzQDurQWAgmijTTyPZCQGrn5ew6wCEwhxxEr2/NHG7IlCwcfRsKymsY4se9KMhoNz0JtQ==}
     engines: {node: '>=22.12.0'}
     hasBin: true
 
@@ -5532,7 +5532,7 @@ snapshots:
   ci-info@4.3.1:
     optional: true
 
-  clawdbot@2026.1.24(@types/express@5.0.6)(devtools-protocol@0.0.1575685)(typescript@5.9.3):
+  clawdbot@2026.1.24-3(@types/express@5.0.6)(devtools-protocol@0.0.1575685)(typescript@5.9.3):
     dependencies:
       '@agentclientprotocol/sdk': 0.13.1(zod@4.3.6)
       '@aws-sdk/client-bedrock': 3.978.0
