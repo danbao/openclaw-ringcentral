@@ -656,7 +656,7 @@ export async function startRingCentralMonitor(
   const { account, config, runtime, abortSignal, statusSink } = options;
   const core = getRingCentralRuntime();
 
-  let subscription: ReturnType<InstanceType<typeof Subscriptions>["createSubscription"]> | null = null;
+  let wsSubscription: Awaited<ReturnType<ReturnType<InstanceType<typeof Subscriptions>["createSubscription"]>["register"]>> | null = null;
   let reconnectAttempts = 0;
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   let isShuttingDown = false;
@@ -683,7 +683,7 @@ export async function startRingCentralMonitor(
       
       // Create subscriptions manager
       const subscriptions = new Subscriptions({ sdk });
-      subscription = subscriptions.createSubscription();
+      const subscription = subscriptions.createSubscription();
 
       // Track current user ID to filter out self messages
       if (!ownerId) {
@@ -715,34 +715,8 @@ export async function startRingCentralMonitor(
         });
       });
 
-      // Handle subscription status changes
-      subscription.on(subscription.events.subscribeSuccess, () => {
-        runtime.log?.(`[${account.accountId}] WebSocket subscription active`);
-        reconnectAttempts = 0; // Reset attempts on successful connection
-      });
-
-      subscription.on(subscription.events.subscribeError, (err: unknown) => {
-        runtime.error?.(`[${account.accountId}] WebSocket subscription error: ${String(err)}`);
-        scheduleReconnect();
-      });
-
-      subscription.on(subscription.events.renewSuccess, () => {
-        logVerbose(core, runtime, "WebSocket subscription renewed");
-      });
-
-      subscription.on(subscription.events.renewError, (err: unknown) => {
-        runtime.error?.(`[${account.accountId}] WebSocket subscription renew error: ${String(err)}`);
-        scheduleReconnect();
-      });
-
-      // Handle automatic renew errors (connection lost)
-      subscription.on(subscription.events.automaticRenewError, (err: unknown) => {
-        runtime.error?.(`[${account.accountId}] WebSocket automatic renew failed: ${String(err)}`);
-        scheduleReconnect();
-      });
-
-      // Subscribe to Team Messaging events
-      await subscription
+      // Subscribe to Team Messaging events and save WsSubscription for cleanup
+      wsSubscription = await subscription
         .setEventFilters([
           "/restapi/v1.0/glip/posts",
           "/restapi/v1.0/glip/groups",
@@ -770,10 +744,10 @@ export async function startRingCentralMonitor(
     reconnectAttempts++;
     runtime.log?.(`[${account.accountId}] Scheduling reconnection attempt ${reconnectAttempts}/${RECONNECT_MAX_ATTEMPTS} in ${delay}ms...`);
 
-    // Clean up existing subscription
-    if (subscription) {
-      subscription.reset().catch(() => {});
-      subscription = null;
+    // Clean up existing WsSubscription
+    if (wsSubscription) {
+      wsSubscription.revoke().catch(() => {});
+      wsSubscription = null;
     }
 
     reconnectTimeout = setTimeout(() => {
@@ -797,11 +771,11 @@ export async function startRingCentralMonitor(
       reconnectTimeout = null;
     }
     
-    if (subscription) {
-      subscription.reset().catch((err) => {
-        runtime.error?.(`[${account.accountId}] Failed to reset subscription: ${String(err)}`);
+    if (wsSubscription) {
+      wsSubscription.revoke().catch((err) => {
+        runtime.error?.(`[${account.accountId}] Failed to revoke subscription: ${String(err)}`);
       });
-      subscription = null;
+      wsSubscription = null;
     }
   };
 
