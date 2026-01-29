@@ -1,6 +1,6 @@
 {
   "name": "moltbot-ringcentral",
-  "version": "2026.1.29-beta3",
+  "version": "2026.1.29-beta4",
   "type": "module",
   "main": "index.ts",
   "description": "Moltbot RingCentral Team Messaging channel plugin",
