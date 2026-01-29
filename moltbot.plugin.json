@@ -9,38 +9,42 @@
     },
     "selfOnly": {
       "label": "Self Only Mode",
-      "help": "When enabled, only respond to your own messages in Personal chat. Disable to allow Team/Group chats."
+      "help": "When enabled, only respond to your own messages in Personal chat. Set to false to enable Team/Group chats."
     },
     "groupPolicy": {
       "label": "Group Policy",
-      "help": "How to handle messages from Teams/Groups. Use 'allowlist' to only respond to specific teams."
+      "help": "How to handle messages from Teams/Groups. Options: disabled (ignore all), allowlist (only configured teams), open (all teams with @mention)."
     },
     "groups": {
       "label": "Allowed Teams",
-      "help": "Configure which Teams can trigger the AI. Add Team IDs to enable them.",
-      "itemLabel": "Team"
+      "help": "Add Team IDs to enable them. Get Team ID from the RingCentral URL: app.ringcentral.com/messages/{TEAM_ID}",
+      "itemLabel": "Team ID",
+      "placeholder": "1541525766146"
     },
     "groups.*": {
       "label": "Team Configuration"
     },
     "groups.*.enabled": {
-      "label": "Enabled"
+      "label": "Enabled",
+      "help": "Enable or disable this team"
     },
     "groups.*.requireMention": {
       "label": "Require @Mention",
-      "help": "When enabled, the bot only responds when mentioned in this team."
+      "help": "When enabled, the bot only responds when @mentioned in this team."
     },
     "groups.*.systemPrompt": {
       "label": "System Prompt",
-      "help": "Custom system prompt for this team. Appended to the agent's default prompt."
+      "help": "Custom instructions for the AI in this team. Appended to the default prompt.",
+      "placeholder": "You are a helpful assistant for the engineering team. Focus on technical questions."
     },
     "groups.*.users": {
       "label": "Allowed Users",
-      "help": "List of user IDs allowed to trigger the bot in this team. Leave empty to allow all."
+      "help": "List of user IDs who can trigger the bot. Leave empty to allow all team members.",
+      "placeholder": "3218766020"
     },
     "requireMention": {
       "label": "Require @Mention (Global)",
-      "help": "When enabled, the bot only responds when mentioned in group chats."
+      "help": "Default setting for all teams. When enabled, the bot only responds when @mentioned."
     },
     "credentials": {
       "label": "API Credentials",
@@ -48,34 +52,43 @@
     },
     "credentials.clientId": {
       "label": "Client ID",
+      "placeholder": "Your RingCentral App Client ID",
       "sensitive": true
     },
     "credentials.clientSecret": {
       "label": "Client Secret",
+      "placeholder": "Your RingCentral App Client Secret",
       "sensitive": true
     },
     "credentials.jwt": {
       "label": "JWT Token",
+      "placeholder": "eyJraWQiOi...",
       "sensitive": true
     },
     "credentials.server": {
       "label": "API Server",
-      "placeholder": "https://platform.ringcentral.com"
+      "placeholder": "https://platform.ringcentral.com",
+      "help": "Use https://platform.devtest.ringcentral.com for sandbox"
     },
     "dmPolicy": {
       "label": "DM Policy",
+      "help": "How to handle direct messages: disabled, allowlist, pairing, or open",
       "advanced": true
     },
     "allowFrom": {
       "label": "DM Allowlist",
+      "help": "User IDs allowed to send DMs",
+      "placeholder": "3218766020",
       "advanced": true
     },
     "mediaMaxMb": {
       "label": "Max Media Size (MB)",
+      "placeholder": "20",
       "advanced": true
     },
     "textChunkLimit": {
       "label": "Text Chunk Limit",
+      "placeholder": "4000",
       "advanced": true
     }
   },
