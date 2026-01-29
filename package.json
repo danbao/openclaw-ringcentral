@@ -31,7 +31,7 @@
     "moltbot.plugin.json",
     "README.md"
   ],
-  "moltbot": {
+  "clawdbot": {
     "extensions": [
       "./index.ts"
     ],
