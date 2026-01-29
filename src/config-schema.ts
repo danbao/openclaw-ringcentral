@@ -10,9 +10,7 @@ import {
 
 const RingCentralGroupConfigSchema = z
   .object({
-    chatId: z.string().optional(),
     requireMention: z.boolean().optional(),
-    allow: z.boolean().optional(),
     enabled: z.boolean().optional(),
     users: z.array(z.union([z.string(), z.number()])).optional(),
     systemPrompt: z.string().optional(),

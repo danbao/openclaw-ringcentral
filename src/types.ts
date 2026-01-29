@@ -131,9 +131,7 @@ export type RingCentralEventBody = {
 // Config types
 
 export type RingCentralGroupConfig = {
-  chatId?: string;
   requireMention?: boolean;
-  allow?: boolean;
   enabled?: boolean;
   users?: Array<string | number>;
   systemPrompt?: string;
