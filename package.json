@@ -1,6 +1,6 @@
 {
   "name": "moltbot-ringcentral",
-  "version": "2026.1.28",
+  "version": "2026.1.29-beta1",
   "type": "module",
   "description": "Moltbot RingCentral Team Messaging channel plugin",
   "license": "MIT",
