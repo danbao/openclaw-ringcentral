@@ -1,0 +1,11 @@
+{
+  "id": "ringcentral",
+  "name": "RingCentral",
+  "description": "RingCentral Team Messaging channel plugin for Moltbot",
+  "channels": ["ringcentral"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
