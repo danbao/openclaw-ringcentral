@@ -1003,7 +1003,9 @@ export async function startRingCentralMonitor(
         // ignore
       }
 
-      // Track current user ID to filter out self messages
+      // Track current user ID to filter out self messages.
+      // NOTE: This hits the Platform REST API and can be rate-limited. We should treat
+      // it as best-effort and back off on 429 / rate limit.
       if (!ownerId) {
         try {
           const platform = mgr.sdk.platform();
@@ -1012,7 +1014,20 @@ export async function startRingCentralMonitor(
           ownerId = userInfo?.id?.toString();
           runtime.log?.(`[${account.accountId}] Authenticated as extension: ${ownerId}`);
         } catch (err) {
-          runtime.error?.(`[${account.accountId}] Failed to get current user: ${String(err)}`);
+          const msg = String(err);
+          const isRate = msg.toLowerCase().includes("rate") || msg.includes("429");
+          if (isRate) {
+            runtime.error?.(
+              `[${account.accountId}] Failed to get current user (rate-limited). ` +
+                `Will continue without ownerId and retry later. err=${msg}`,
+            );
+          } else {
+            runtime.error?.(`[${account.accountId}] Failed to get current user: ${msg}`);
+          }
+
+          // Backoff: avoid hammering if startAccount is retried/restarted.
+          // (nextAllowedWsConnectAt is a module-level guard already used for WS connects)
+          nextAllowedWsConnectAt = Date.now() + 60_000;
         }
       }
 
