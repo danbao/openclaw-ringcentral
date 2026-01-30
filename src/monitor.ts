@@ -1,4 +1,6 @@
 import { Subscriptions } from "@ringcentral/subscriptions";
+import * as fs from "fs";
+import * as path from "path";
 
 import type { MoltbotConfig } from "clawdbot/plugin-sdk";
 import { resolveMentionGatingWithBypass } from "clawdbot/plugin-sdk";
@@ -61,6 +63,67 @@ function logVerbose(
 ) {
   if (core.logging.shouldLogVerbose()) {
     runtime.log?.(`[ringcentral] ${message}`);
+  }
+}
+
+/**
+ * Save group chat message to workspace memory file.
+ * File path: ${workspace}/memory/chats/YYYY-MM-DD/${chatId}.md
+ */
+async function saveGroupChatMessage(params: {
+  workspace: string;
+  chatId: string;
+  chatName?: string;
+  senderId: string;
+  messageText: string;
+  timestamp?: string;
+  runtime: RingCentralRuntimeEnv;
+}): Promise<void> {
+  const { workspace, chatId, chatName, senderId, messageText, timestamp, runtime } = params;
+
+  if (!workspace) {
+    runtime.log?.(`[ringcentral] Cannot save chat message: workspace not configured`);
+    return;
+  }
+
+  try {
+    // Parse timestamp or use current time
+    const msgDate = timestamp ? new Date(timestamp) : new Date();
+    const dateStr = msgDate.toISOString().split("T")[0]; // YYYY-MM-DD
+    const timeStr = msgDate.toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "Asia/Shanghai",
+    });
+
+    // Build file path
+    const chatDir = path.join(workspace, "memory", "chats", dateStr);
+    const filePath = path.join(chatDir, `${chatId}.md`);
+
+    // Ensure directory exists
+    await fs.promises.mkdir(chatDir, { recursive: true });
+
+    // Format message entry
+    const header = chatName ? `# ${chatName} (${chatId})\n\n` : `# Chat ${chatId}\n\n`;
+    const entry = `## ${timeStr} - ${senderId}\n${messageText}\n\n---\n\n`;
+
+    // Check if file exists; if not, write header first
+    let content = entry;
+    try {
+      await fs.promises.access(filePath);
+      // File exists, just append
+    } catch {
+      // File doesn't exist, prepend header
+      content = header + entry;
+    }
+
+    // Append to file
+    await fs.promises.appendFile(filePath, content === entry ? entry : content, "utf-8");
+
+    runtime.log?.(`[ringcentral] Saved chat message to ${filePath}`);
+  } catch (err) {
+    runtime.error?.(`[ringcentral] Failed to save chat message: ${String(err)}`);
   }
 }
 
@@ -281,6 +344,22 @@ async function processMessageWithPipeline(params: {
         logVerbose(core, runtime, `drop group message (sender not allowed, ${senderId})`);
         return;
       }
+    }
+
+    // Save group chat message to workspace for analysis/logging
+    // This happens AFTER allowlist check but BEFORE mention check,
+    // so we log all messages from monitored groups regardless of AI response
+    const workspace = config.agents?.defaults?.workspace;
+    if (workspace) {
+      void saveGroupChatMessage({
+        workspace,
+        chatId,
+        chatName,
+        senderId,
+        messageText: rawBody,
+        timestamp: eventBody.creationTime,
+        runtime,
+      });
     }
   }
 
