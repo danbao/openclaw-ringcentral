@@ -523,7 +523,7 @@ async function processMessageWithPipeline(params: {
 
   // DEBUG: log critical routing/meta fields to confirm which ctx values are actually being used at runtime.
   runtime.log?.(
-    `[ringcentral] inbound-meta: isGroup=${isGroup} chatType=${chatType} chatId=${chatId} senderId=${senderId} chatName=${JSON.stringify(
+    `[default] inbound-meta: isGroup=${isGroup} chatType=${chatType} chatId=${chatId} senderId=${senderId} chatName=${JSON.stringify(
       chatName ?? null,
     )} sessionKey=${route.sessionKey} ctx.From=${ctxPayload.From} ctx.To=${ctxPayload.To} ConversationLabel=${JSON.stringify(
       conversationLabel,
