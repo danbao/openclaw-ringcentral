@@ -387,10 +387,18 @@ async function processMessageWithPipeline(params: {
   // - DM/Person: route by the *peer userId* (not chatId)
   //   Reason: some DM payloads/types can collapse to a "personal"/self chat id which would
   //   incorrectly merge multiple DMs into one session.
+  const ownerIdNorm = normalizeUserId(ownerId);
+  const senderIdNorm = normalizeUserId(senderId);
+
+  // Best-effort: compute the other participant id from chatInfo.members when available.
+  // RingCentral DM members usually contains 2 userIds.
+  const chatMembers: string[] = Array.isArray((chatInfo as any)?.members)
+    ? ((chatInfo as any).members as any[]).map((v) => normalizeUserId(String(v)))
+    : [];
+  const dmPeerFromMembers = chatMembers.find((id) => id && id !== ownerIdNorm) || "";
+
   const dmPeerUserId = !isGroup
-    ? normalizeUserId(senderId) === normalizeUserId(ownerId)
-      ? normalizeUserId((eventBody as any)?.creatorId || "") // owner sending; best-effort peer id
-      : normalizeUserId(senderId)
+    ? (dmPeerFromMembers || (senderIdNorm !== ownerIdNorm ? senderIdNorm : ""))
     : "";
 
   const route = core.channel.routing.resolveAgentRoute({
