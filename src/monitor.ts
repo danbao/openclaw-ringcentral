@@ -392,6 +392,17 @@ async function processMessageWithPipeline(params: {
   const isPersonalChat = chatType === "Personal" || chatType === "PersonalChat";
   const isGroup = chatType !== "Direct" && chatType !== "PersonalChat" && chatType !== "Personal";
 
+  // Only track configured groups; ignore any other group/team chats.
+  const configuredGroups = account.config.groups ?? {};
+  const hasConfiguredGroups = Object.keys(configuredGroups).length > 0;
+  const isTrackedGroup = !isGroup
+    ? true
+    : Boolean(configuredGroups[chatId] || configuredGroups[String(chatId)] || configuredGroups[chatName ?? ""]);
+  if (isGroup && hasConfiguredGroups && !isTrackedGroup) {
+    logVerbose(core, runtime, `ignore group chat not in configured groups: chatId=${chatId}`);
+    return;
+  }
+
   // Session key should be per conversation id (RingCentral chatId)
   // NOTE: keep peer.kind stable for group vs dm.
   // Session routing
@@ -684,10 +695,11 @@ async function processMessageWithPipeline(params: {
     RawBody: rawBody,
     CommandBody: rawBody,
     // IMPORTANT:
-    // Moltbot derives group metadata (groupId/displayName) from ctx.From for group/channel chats.
-    // So for RingCentral groups we must include the conversation id (chatId) in From.
+    // OpenClaw derives group metadata from ctx.From / ctx.To for group/channel chats.
     From: isGroup ? `ringcentral:group:${chatId}` : `ringcentral:${senderId}`,
-    To: `ringcentral:${chatId}`,
+    // IMPORTANT: use provider/group-prefixed To for group chats so OpenClaw can infer
+    // group delivery context and session type correctly.
+    To: isGroup ? `ringcentral:group:${chatId}` : `ringcentral:${chatId}`,
     SessionKey: dmSessionKey,
     AccountId: route.accountId,
     ChatType: isGroup ? "channel" : "direct",
@@ -708,7 +720,7 @@ async function processMessageWithPipeline(params: {
     GroupSubject: isGroup ? (chatName?.trim() ? chatName.trim() : undefined) : undefined,
     GroupSystemPrompt: isGroup ? groupSystemPrompt : undefined,
     OriginatingChannel: "ringcentral",
-    OriginatingTo: `ringcentral:${chatId}`,
+    OriginatingTo: isGroup ? `ringcentral:group:${chatId}` : `ringcentral:${chatId}`,
     OriginatingFrom: isGroup ? `ringcentral:group:${chatId}` : `ringcentral:${senderId}`,
   });
 
