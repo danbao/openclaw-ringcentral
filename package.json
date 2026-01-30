@@ -1,9 +1,9 @@
 {
-  "name": "moltbot-ringcentral",
-  "version": "2026.1.29",
+  "name": "openclaw-ringcentral",
+  "version": "2026.1.29-beta1",
   "type": "module",
   "main": "index.ts",
-  "description": "Moltbot RingCentral Team Messaging channel plugin",
+  "description": "OpenClaw RingCentral Team Messaging channel plugin",
   "license": "MIT",
   "scripts": {
     "test": "vitest run",
@@ -12,15 +12,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/danbao/moltbot-ringcentral.git"
+    "url": "https://github.com/danbao/openclaw-ringcentral.git"
   },
-  "homepage": "https://github.com/danbao/moltbot-ringcentral#readme",
+  "homepage": "https://github.com/danbao/openclaw-ringcentral#readme",
   "bugs": {
-    "url": "https://github.com/danbao/moltbot-ringcentral/issues"
+    "url": "https://github.com/danbao/openclaw-ringcentral/issues"
   },
   "keywords": [
-    "moltbot",
-    "clawdbot",
+    "openclaw",
     "ringcentral",
     "team-messaging",
     "chat",
@@ -29,10 +28,10 @@
   "files": [
     "src",
     "index.ts",
-    "moltbot.plugin.json",
+    "openclaw.plugin.json",
     "README.md"
   ],
-  "clawdbot": {
+  "openclaw": {
     "extensions": [
       "./index.ts"
     ],
@@ -51,7 +50,7 @@
       "order": 56
     },
     "install": {
-      "npmSpec": "moltbot-ringcentral",
+      "npmSpec": "openclaw-ringcentral",
       "defaultChoice": "npm"
     }
   },
@@ -63,11 +62,11 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "clawdbot": "2026.1.24-3",
+    "openclaw": "2026.1.29",
     "typescript": "^5.7.3",
     "vitest": "^3.0.4"
   },
   "peerDependencies": {
-    "clawdbot": ">=2026.1.24"
+    "openclaw": ">=2026.1.29"
   }
 }

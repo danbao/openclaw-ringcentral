@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
-import type { MoltbotConfig } from "clawdbot/plugin-sdk";
+import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import {
   listRingCentralAccountIds,
   resolveDefaultRingCentralAccountId,
@@ -9,12 +9,12 @@ import {
 
 describe("listRingCentralAccountIds", () => {
   it("returns default account when no accounts configured", () => {
-    const cfg = { channels: {} } as MoltbotConfig;
+    const cfg = { channels: {} } as OpenClawConfig;
     expect(listRingCentralAccountIds(cfg)).toEqual(["default"]);
   });
 
   it("returns default account when ringcentral channel not configured", () => {
-    const cfg = { channels: { telegram: { enabled: true } } } as MoltbotConfig;
+    const cfg = { channels: { telegram: { enabled: true } } } as OpenClawConfig;
     expect(listRingCentralAccountIds(cfg)).toEqual(["default"]);
   });
 
@@ -28,7 +28,7 @@ describe("listRingCentralAccountIds", () => {
           },
         },
       },
-    } as MoltbotConfig;
+    } as OpenClawConfig;
     expect(listRingCentralAccountIds(cfg)).toEqual(["personal", "work"]);
   });
 });
@@ -45,7 +45,7 @@ describe("resolveDefaultRingCentralAccountId", () => {
           },
         },
       },
-    } as MoltbotConfig;
+    } as OpenClawConfig;
     expect(resolveDefaultRingCentralAccountId(cfg)).toBe("work");
   });
 
@@ -59,7 +59,7 @@ describe("resolveDefaultRingCentralAccountId", () => {
           },
         },
       },
-    } as MoltbotConfig;
+    } as OpenClawConfig;
     expect(resolveDefaultRingCentralAccountId(cfg)).toBe("default");
   });
 
@@ -73,7 +73,7 @@ describe("resolveDefaultRingCentralAccountId", () => {
           },
         },
       },
-    } as MoltbotConfig;
+    } as OpenClawConfig;
     expect(resolveDefaultRingCentralAccountId(cfg)).toBe("alpha");
   });
 });
@@ -103,7 +103,7 @@ describe("resolveRingCentralAccount", () => {
           },
         },
       },
-    } as MoltbotConfig;
+    } as OpenClawConfig;
 
     const account = resolveRingCentralAccount({ cfg });
 
@@ -128,7 +128,7 @@ describe("resolveRingCentralAccount", () => {
           enabled: true,
         },
       },
-    } as MoltbotConfig;
+    } as OpenClawConfig;
 
     const account = resolveRingCentralAccount({ cfg });
 
@@ -146,7 +146,7 @@ describe("resolveRingCentralAccount", () => {
           enabled: true,
         },
       },
-    } as MoltbotConfig;
+    } as OpenClawConfig;
 
     const account = resolveRingCentralAccount({ cfg });
 
@@ -166,7 +166,7 @@ describe("resolveRingCentralAccount", () => {
           },
         },
       },
-    } as MoltbotConfig;
+    } as OpenClawConfig;
 
     const account = resolveRingCentralAccount({ cfg });
 
@@ -190,7 +190,7 @@ describe("resolveRingCentralAccount", () => {
           },
         },
       },
-    } as MoltbotConfig;
+    } as OpenClawConfig;
 
     const account = resolveRingCentralAccount({ cfg, accountId: "work" });
 
@@ -218,7 +218,7 @@ describe("resolveRingCentralAccount", () => {
           },
         },
       },
-    } as MoltbotConfig;
+    } as OpenClawConfig;
 
     const account = resolveRingCentralAccount({ cfg, accountId: "work" });
 
@@ -245,7 +245,7 @@ describe("resolveRingCentralAccount", () => {
           },
         },
       },
-    } as MoltbotConfig;
+    } as OpenClawConfig;
 
     const account = resolveRingCentralAccount({ cfg, accountId: "work" });
 
@@ -284,7 +284,7 @@ describe("listEnabledRingCentralAccounts", () => {
           },
         },
       },
-    } as MoltbotConfig;
+    } as OpenClawConfig;
 
     const accounts = listEnabledRingCentralAccounts(cfg);
 
@@ -302,7 +302,7 @@ describe("listEnabledRingCentralAccounts", () => {
           },
         },
       },
-    } as MoltbotConfig;
+    } as OpenClawConfig;
 
     const accounts = listEnabledRingCentralAccounts(cfg);
 

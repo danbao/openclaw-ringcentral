@@ -12,8 +12,8 @@ import {
   setAccountEnabledInConfigSection,
   type ChannelDock,
   type ChannelPlugin,
-  type MoltbotConfig,
-} from "clawdbot/plugin-sdk";
+  type OpenClawConfig,
+} from "openclaw/plugin-sdk";
 
 import {
   listRingCentralAccountIds,
@@ -55,7 +55,7 @@ export const ringcentralDock: ChannelDock = {
   outbound: { textChunkLimit: 4000 },
   config: {
     resolveAllowFrom: ({ cfg, accountId }) =>
-      (resolveRingCentralAccount({ cfg: cfg as MoltbotConfig, accountId }).config.dm?.allowFrom ??
+      (resolveRingCentralAccount({ cfg: cfg as OpenClawConfig, accountId }).config.dm?.allowFrom ??
         []
       ).map((entry) => String(entry)),
     formatAllowFrom: ({ allowFrom }) =>
@@ -66,7 +66,7 @@ export const ringcentralDock: ChannelDock = {
   },
   groups: {
     resolveRequireMention: ({ cfg, accountId }) => {
-      const account = resolveRingCentralAccount({ cfg: cfg as MoltbotConfig, accountId });
+      const account = resolveRingCentralAccount({ cfg: cfg as OpenClawConfig, accountId });
       return account.config.requireMention ?? true;
     },
   },
@@ -96,7 +96,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
     idLabel: "ringcentralUserId",
     normalizeAllowEntry: (entry) => formatAllowFromEntry(entry),
     notifyApproval: async ({ cfg, id }) => {
-      const account = resolveRingCentralAccount({ cfg: cfg as MoltbotConfig });
+      const account = resolveRingCentralAccount({ cfg: cfg as OpenClawConfig });
       if (account.credentialSource === "none") return;
       const target = normalizeRingCentralTarget(id) ?? id;
       // For DM approval, we need to find/create a direct chat
@@ -126,13 +126,13 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
   reload: { configPrefixes: ["channels.ringcentral"] },
   configSchema: buildChannelConfigSchema(RingCentralConfigSchema),
   config: {
-    listAccountIds: (cfg) => listRingCentralAccountIds(cfg as MoltbotConfig),
+    listAccountIds: (cfg) => listRingCentralAccountIds(cfg as OpenClawConfig),
     resolveAccount: (cfg, accountId) =>
-      resolveRingCentralAccount({ cfg: cfg as MoltbotConfig, accountId }),
-    defaultAccountId: (cfg) => resolveDefaultRingCentralAccountId(cfg as MoltbotConfig),
+      resolveRingCentralAccount({ cfg: cfg as OpenClawConfig, accountId }),
+    defaultAccountId: (cfg) => resolveDefaultRingCentralAccountId(cfg as OpenClawConfig),
     setAccountEnabled: ({ cfg, accountId, enabled }) =>
       setAccountEnabledInConfigSection({
-        cfg: cfg as MoltbotConfig,
+        cfg: cfg as OpenClawConfig,
         sectionKey: "ringcentral",
         accountId,
         enabled,
@@ -140,7 +140,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
       }),
     deleteAccount: ({ cfg, accountId }) =>
       deleteAccountFromConfigSection({
-        cfg: cfg as MoltbotConfig,
+        cfg: cfg as OpenClawConfig,
         sectionKey: "ringcentral",
         accountId,
         clearBaseFields: [
@@ -159,7 +159,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
     }),
     resolveAllowFrom: ({ cfg, accountId }) =>
       (resolveRingCentralAccount({
-        cfg: cfg as MoltbotConfig,
+        cfg: cfg as OpenClawConfig,
         accountId,
       }).config.dm?.allowFrom ?? []
       ).map((entry) => String(entry)),
@@ -173,7 +173,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
     resolveDmPolicy: ({ cfg, accountId, account }) => {
       const resolvedAccountId = accountId ?? account.accountId ?? DEFAULT_ACCOUNT_ID;
       const useAccountPath = Boolean(
-        (cfg as MoltbotConfig).channels?.ringcentral?.accounts?.[resolvedAccountId],
+        (cfg as OpenClawConfig).channels?.ringcentral?.accounts?.[resolvedAccountId],
       );
       const allowFromPath = useAccountPath
         ? `channels.ringcentral.accounts.${resolvedAccountId}.dm.`
@@ -205,7 +205,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
   },
   groups: {
     resolveRequireMention: ({ cfg, accountId }) => {
-      const account = resolveRingCentralAccount({ cfg: cfg as MoltbotConfig, accountId });
+      const account = resolveRingCentralAccount({ cfg: cfg as OpenClawConfig, accountId });
       return account.config.requireMention ?? true;
     },
   },
@@ -227,7 +227,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
     self: async () => null,
     listPeers: async ({ cfg, accountId, query, limit }) => {
       const account = resolveRingCentralAccount({
-        cfg: cfg as MoltbotConfig,
+        cfg: cfg as OpenClawConfig,
         accountId,
       });
       const q = query?.trim().toLowerCase() || "";
@@ -247,7 +247,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
     },
     listGroups: async ({ cfg, accountId, query, limit }) => {
       const account = resolveRingCentralAccount({
-        cfg: cfg as MoltbotConfig,
+        cfg: cfg as OpenClawConfig,
         accountId,
       });
       const groups = account.config.groups ?? {};
@@ -286,7 +286,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
     resolveAccountId: ({ accountId }) => normalizeAccountId(accountId),
     applyAccountName: ({ cfg, accountId, name }) =>
       applyAccountNameToChannelSection({
-        cfg: cfg as MoltbotConfig,
+        cfg: cfg as OpenClawConfig,
         channelKey: "ringcentral",
         accountId,
         name,
@@ -302,7 +302,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
     },
     applyAccountConfig: ({ cfg, accountId, input }) => {
       const namedConfig = applyAccountNameToChannelSection({
-        cfg: cfg as MoltbotConfig,
+        cfg: cfg as OpenClawConfig,
         channelKey: "ringcentral",
         accountId,
         name: input.name,
@@ -310,7 +310,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
       const next =
         accountId !== DEFAULT_ACCOUNT_ID
           ? migrateBaseNameToDefaultAccount({
-              cfg: namedConfig as MoltbotConfig,
+              cfg: namedConfig as OpenClawConfig,
               channelKey: "ringcentral",
             })
           : namedConfig;
@@ -339,7 +339,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
               ...configPatch,
             },
           },
-        } as MoltbotConfig;
+        } as OpenClawConfig;
       }
       return {
         ...next,
@@ -358,7 +358,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
             },
           },
         },
-      } as MoltbotConfig;
+      } as OpenClawConfig;
     },
   },
   outbound: {
@@ -405,7 +405,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
     },
     sendText: async ({ cfg, to, text, accountId }) => {
       const account = resolveRingCentralAccount({
-        cfg: cfg as MoltbotConfig,
+        cfg: cfg as OpenClawConfig,
         accountId,
       });
       const result = await sendRingCentralMessage({
@@ -424,12 +424,12 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
         throw new Error("RingCentral mediaUrl is required.");
       }
       const account = resolveRingCentralAccount({
-        cfg: cfg as MoltbotConfig,
+        cfg: cfg as OpenClawConfig,
         accountId,
       });
       const runtime = getRingCentralRuntime();
       const maxBytes = resolveChannelMediaMaxBytes({
-        cfg: cfg as MoltbotConfig,
+        cfg: cfg as OpenClawConfig,
         resolveChannelLimitMb: ({ cfg: c, accountId: aid }) =>
           (c.channels?.ringcentral as { accounts?: Record<string, { mediaMaxMb?: number }>; mediaMaxMb?: number } | undefined)
             ?.accounts?.[aid]?.mediaMaxMb ??
@@ -527,7 +527,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
       });
       const unregister = await startRingCentralMonitor({
         account,
-        config: ctx.cfg as MoltbotConfig,
+        config: ctx.cfg as OpenClawConfig,
         runtime: ctx.runtime,
         abortSignal: ctx.abortSignal,
         statusSink: (patch) => ctx.setStatus({ accountId: account.accountId, ...patch }),

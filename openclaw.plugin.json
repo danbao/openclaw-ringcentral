@@ -1,7 +1,7 @@
 {
-  "id": "moltbot-ringcentral",
+  "id": "openclaw-ringcentral",
   "name": "RingCentral",
-  "description": "RingCentral Team Messaging channel plugin for Moltbot",
+  "description": "OpenClaw RingCentral Team Messaging channel plugin",
   "channels": ["ringcentral"],
   "uiHints": {
     "enabled": {

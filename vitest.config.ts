@@ -7,7 +7,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "clawdbot/plugin-sdk": resolve(__dirname, "node_modules/clawdbot/dist/plugin-sdk/index.js"),
+      "openclaw/plugin-sdk": resolve(__dirname, "node_modules/openclaw/dist/plugin-sdk/index.js"),
     },
   },
 });

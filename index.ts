@@ -1,18 +1,17 @@
-import type { MoltbotPluginApi } from "clawdbot/plugin-sdk";
-import { emptyPluginConfigSchema } from "clawdbot/plugin-sdk";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 
 import { ringcentralDock, ringcentralPlugin } from "./src/channel.js";
 import { setRingCentralRuntime } from "./src/runtime.js";
 
 const plugin = {
-  id: "moltbot-ringcentral",
+  id: "openclaw-ringcentral",
   name: "RingCentral",
-  description: "Moltbot RingCentral Team Messaging channel plugin",
+  description: "OpenClaw RingCentral Team Messaging channel plugin",
   configSchema: emptyPluginConfigSchema(),
-  register(api: MoltbotPluginApi) {
+  register(api: OpenClawPluginApi) {
     setRingCentralRuntime(api.runtime);
     api.registerChannel({ plugin: ringcentralPlugin, dock: ringcentralDock });
-    // WebSocket mode: no HTTP handler needed
   },
 };
 
