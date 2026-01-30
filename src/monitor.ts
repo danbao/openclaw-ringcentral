@@ -882,10 +882,15 @@ export async function startRingCentralMonitor(
       });
 
       // Subscribe to Team Messaging events and save WsSubscription for cleanup
+      // IMPORTANT:
+      // We use Team Messaging API (/team-messaging/v1/...) for fetching chats/persons.
+      // So our push subscription should also follow Team Messaging event filters.
+      // The older /glip/* filters can yield 404s depending on account/permissions and
+      // can break inbound processing.
       wsSubscription = await subscription
         .setEventFilters([
-          "/restapi/v1.0/glip/posts",
-          "/restapi/v1.0/glip/groups",
+          "/restapi/v1.0/team-messaging/v1/posts",
+          "/restapi/v1.0/team-messaging/v1/chats",
         ])
         .register();
       
