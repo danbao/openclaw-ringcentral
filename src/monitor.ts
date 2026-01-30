@@ -390,9 +390,11 @@ async function processMessageWithPipeline(params: {
 
   // Personal, PersonalChat, Direct are all DM types
   const isPersonalChat = chatType === "Personal" || chatType === "PersonalChat";
-  const isGroup = chatType !== "Direct" && chatType !== "PersonalChat" && chatType !== "Personal";
+  const isDirectChat = chatType === "Direct";
+  const isGroup = !(isPersonalChat || isDirectChat);
 
   // Only track configured groups; ignore any other group/team chats.
+  // NOTE: Direct/Personal chats are NOT subject to this filter.
   const configuredGroups = account.config.groups ?? {};
   const hasConfiguredGroups = Object.keys(configuredGroups).length > 0;
   const isTrackedGroup = !isGroup
