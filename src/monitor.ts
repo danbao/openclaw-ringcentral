@@ -285,13 +285,80 @@ async function processMessageWithPipeline(params: {
     const chatInfo = await getRingCentralChat({ account, chatId });
     chatType = chatInfo?.type ?? "Group";
     chatName = chatInfo?.name ?? undefined;
-  } catch {
-    // If we can't fetch chat info, assume it's a group
+    // DEBUG: dump minimal chatInfo fields for name resolution
+    runtime.log?.(`[${account.accountId}] chatInfo: id=${chatId} type=${chatInfo?.type ?? null} name=${JSON.stringify(chatInfo?.name ?? null)} description=${JSON.stringify((chatInfo as any)?.description ?? null)}`);
+  } catch (err) {
+    // If we can't fetch chat info, assume it's a group.
+    // DEBUG: log error so we can understand why chatName isn't available.
+    runtime.error?.(`[${account.accountId}] getRingCentralChat failed: ${String(err)}`);
   }
 
   // Personal, PersonalChat, Direct are all DM types
   const isPersonalChat = chatType === "Personal" || chatType === "PersonalChat";
   const isGroup = chatType !== "Direct" && chatType !== "PersonalChat" && chatType !== "Personal";
+
+  // META-ONLY: Always try to update session label/display metadata for group chats,
+  // even if the message will be dropped by allowlist/groupPolicy later.
+  // This keeps sessions list/dashboard readable (label from chatName) without changing reply policy.
+  try {
+    if (isGroup) {
+      const storePath = core.channel.session.resolveStorePath(config.session?.store, {
+        agentId: route.agentId,
+      });
+
+      // If RingCentral chat has no name (often true for Group chats), create a stable label
+      // by resolving up to 3 member first names and joining with commas.
+      let metaLabel: string;
+      if (chatName?.trim()) {
+        metaLabel = chatName.trim();
+      } else {
+        let fallbackParts: string[] = [];
+        try {
+          const memberIds = Array.isArray(chatInfo?.members) ? chatInfo!.members!.slice(0, 3) : [];
+          const memberNames = await Promise.all(
+            memberIds.map(async (id) => {
+              try {
+                const u = await getRingCentralUser({ account, userId: id });
+                return u?.firstName?.trim() || null;
+              } catch {
+                return null;
+              }
+            }),
+          );
+          fallbackParts = memberNames.filter((x): x is string => !!x);
+        } catch {
+          // ignore
+        }
+
+        metaLabel = fallbackParts.length > 0 ? fallbackParts.join(", ") : `chat:${chatId}`;
+      }
+
+      void core.channel.session
+        .recordSessionMetaFromInbound({
+          storePath,
+          sessionKey: route.sessionKey,
+          ctx: core.channel.reply.finalizeInboundContext({
+            Provider: "ringcentral",
+            Surface: "ringcentral",
+            From: `ringcentral:group:${chatId}`,
+            To: `ringcentral:${chatId}`,
+            OriginatingChannel: "ringcentral",
+            OriginatingTo: `ringcentral:${chatId}`,
+            ChatType: "channel",
+            AccountId: route.accountId,
+            SessionKey: route.sessionKey,
+            ConversationLabel: metaLabel,
+            GroupSpace: metaLabel,
+            GroupSubject: metaLabel,
+          }),
+        })
+        .catch((err) => {
+          runtime.error?.(`ringcentral: meta-only session meta update failed: ${String(err)}`);
+        });
+    }
+  } catch (err) {
+    runtime.error?.(`ringcentral: meta-only session meta update crashed: ${String(err)}`);
+  }
   runtime.log?.(`[${account.accountId}] Chat type: ${chatType}, isGroup: ${isGroup}`);
 
   // In selfOnly mode, only allow "Personal" chat (conversation with yourself)
@@ -516,9 +583,13 @@ async function processMessageWithPipeline(params: {
     MediaType: mediaType,
     MediaUrl: mediaPath,
     GroupSpace: isGroup ? (chatName?.trim() ? chatName.trim() : undefined) : undefined,
+    // Some cores/providers prefer GroupSubject for label derivation.
+    // Set it to chatName to make label resolution more robust.
+    GroupSubject: isGroup ? (chatName?.trim() ? chatName.trim() : undefined) : undefined,
     GroupSystemPrompt: isGroup ? groupSystemPrompt : undefined,
     OriginatingChannel: "ringcentral",
     OriginatingTo: `ringcentral:${chatId}`,
+    OriginatingFrom: isGroup ? `ringcentral:group:${chatId}` : `ringcentral:${senderId}`,
   });
 
   // DEBUG: log critical routing/meta fields to confirm which ctx values are actually being used at runtime.
@@ -551,13 +622,26 @@ async function processMessageWithPipeline(params: {
       // If we only have a fallback label, overwrite it with the real group name.
       // NOTE: recordSessionMetaFromInbound merges meta; this second call ensures the
       // dashboard/session list picks up the newer label even for pre-existing sessions.
-      if (conversationLabel === fallbackLabel) {
+      // Treat a few common weak labels as eligible for repair.
+      // NOTE: core may append ` id:<chatId>` when it falls back to GroupSpace/From.
+      const weakLabelCandidates = new Set([
+        fallbackLabel,
+        `chat:${chatId} id:${chatId}`,
+        `ringcentral:group:${chatId}`,
+        `ringcentral:group:${chatId} id:${chatId}`,
+        String(chatId),
+      ]);
+
+      const currentLabel = (conversationLabel || "").trim();
+
+      if (!currentLabel || weakLabelCandidates.has(currentLabel)) {
         void core.channel.session.recordSessionMetaFromInbound({
           storePath,
           sessionKey: ctxPayload.SessionKey ?? route.sessionKey,
           ctx: {
             ...ctxPayload,
             ConversationLabel: repairedLabel,
+            GroupSubject: repairedLabel,
             GroupSpace: repairedLabel,
           },
         });
