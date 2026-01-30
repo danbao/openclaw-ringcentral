@@ -312,24 +312,22 @@ async function processMessageWithPipeline(params: {
   let effectiveWasMentioned: boolean | undefined;
 
   if (isGroup) {
+    runtime.log?.(`[${account.accountId}] Entering group processing: chatId=${chatId}, groupPolicy=${groupPolicy}, groupEntry=${!!groupEntry}`);
     if (groupPolicy === "disabled") {
-      logVerbose(core, runtime, `drop group message (groupPolicy=disabled, chat=${chatId})`);
+      runtime.log?.(`[${account.accountId}] DROP: groupPolicy=disabled`);
       return;
     }
     const groupAllowlistConfigured = groupConfigResolved.allowlistConfigured;
     const groupAllowed =
       Boolean(groupEntry) || Boolean((account.config.groups ?? {})["*"]);
+    runtime.log?.(`[${account.accountId}] Allowlist check: configured=${groupAllowlistConfigured}, allowed=${groupAllowed}`);
     if (groupPolicy === "allowlist") {
       if (!groupAllowlistConfigured) {
-        logVerbose(
-          core,
-          runtime,
-          `drop group message (groupPolicy=allowlist, no allowlist, chat=${chatId})`,
-        );
+        runtime.log?.(`[${account.accountId}] DROP: no allowlist configured`);
         return;
       }
       if (!groupAllowed) {
-        logVerbose(core, runtime, `drop group message (not allowlisted, chat=${chatId})`);
+        runtime.log?.(`[${account.accountId}] DROP: not in allowlist`);
         return;
       }
     }
@@ -350,6 +348,7 @@ async function processMessageWithPipeline(params: {
     // This happens AFTER allowlist check but BEFORE mention check,
     // so we log all messages from monitored groups regardless of AI response
     const workspace = config.agents?.defaults?.workspace;
+    runtime.log?.(`[${account.accountId}] Group message logging: workspace=${workspace}, chatId=${chatId}, senderId=${senderId}`);
     if (workspace) {
       void saveGroupChatMessage({
         workspace,
@@ -360,6 +359,8 @@ async function processMessageWithPipeline(params: {
         timestamp: eventBody.creationTime,
         runtime,
       });
+    } else {
+      runtime.log?.(`[${account.accountId}] Skipping chat log: no workspace configured`);
     }
   }
 
@@ -438,13 +439,15 @@ async function processMessageWithPipeline(params: {
     return;
   }
 
+  // Session key should be per conversation id (RingCentral chatId)
+  // NOTE: keep peer.kind stable for group vs dm.
   const route = core.channel.routing.resolveAgentRoute({
     cfg: config,
     channel: "ringcentral",
     accountId: account.accountId,
     peer: {
       kind: isGroup ? "group" : "dm",
-      id: chatId,
+      id: chatId, // conversation id
     },
   });
 
@@ -459,8 +462,11 @@ async function processMessageWithPipeline(params: {
     }
   }
 
+  // Session label should be the conversation name (if available)
+  // - group: chatName (fallback: chat:<id>)
+  // - dm: user:<senderId>
   const fromLabel = isGroup
-    ? chatName || `chat:${chatId}`
+    ? (chatName?.trim() ? chatName.trim() : `chat:${chatId}`)
     : `user:${senderId}`;
   const storePath = core.channel.session.resolveStorePath(config.session?.store, {
     agentId: route.agentId,
