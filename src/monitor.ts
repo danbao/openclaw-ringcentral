@@ -673,6 +673,12 @@ async function processMessageWithPipeline(params: {
     ? (chatName?.trim() ? chatName.trim() : `chat:${chatId}`)
     : `user:${senderId}`;
 
+  // Force DM session isolation: use peer userId as the stable session key component.
+  // This avoids merging all DMs into the default `agent:main:main` session.
+  const dmSessionKey = !isGroup && dmPeerUserId
+    ? `${route.agentId}:ringcentral:dm:${dmPeerUserId}`
+    : route.sessionKey;
+
   const ctxPayload = core.channel.reply.finalizeInboundContext({
     Body: body,
     RawBody: rawBody,
@@ -682,7 +688,7 @@ async function processMessageWithPipeline(params: {
     // So for RingCentral groups we must include the conversation id (chatId) in From.
     From: isGroup ? `ringcentral:group:${chatId}` : `ringcentral:${senderId}`,
     To: `ringcentral:${chatId}`,
-    SessionKey: route.sessionKey,
+    SessionKey: dmSessionKey,
     AccountId: route.accountId,
     ChatType: isGroup ? "channel" : "direct",
     ConversationLabel: conversationLabel,
