@@ -382,13 +382,24 @@ async function processMessageWithPipeline(params: {
 
   // Session key should be per conversation id (RingCentral chatId)
   // NOTE: keep peer.kind stable for group vs dm.
+  // Session routing
+  // - Group/Team: route by conversation id (chatId)
+  // - DM/Person: route by the *peer userId* (not chatId)
+  //   Reason: some DM payloads/types can collapse to a "personal"/self chat id which would
+  //   incorrectly merge multiple DMs into one session.
+  const dmPeerUserId = !isGroup
+    ? normalizeUserId(senderId) === normalizeUserId(ownerId)
+      ? normalizeUserId((eventBody as any)?.creatorId || "") // owner sending; best-effort peer id
+      : normalizeUserId(senderId)
+    : "";
+
   const route = core.channel.routing.resolveAgentRoute({
     cfg: config,
     channel: "ringcentral",
     accountId: account.accountId,
     peer: {
       kind: isGroup ? "group" : "dm",
-      id: chatId, // conversation id
+      id: isGroup ? chatId : (dmPeerUserId || chatId),
     },
   });
 
