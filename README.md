@@ -9,6 +9,7 @@ RingCentral Team Messaging channel plugin for OpenClaw. Enables bidirectional me
 - Self-only mode (talk to AI as yourself)
 - Support for text messages and attachments
 - Typing indicators
+- Adaptive Cards support (create, read, update, delete)
 
 ## Prerequisites
 
@@ -185,6 +186,33 @@ Add **WebSocket Subscriptions** permission in your app settings. Permission chan
 ### Rate limit errors
 
 RingCentral has API rate limits. If you see "Request rate exceeded", wait a minute before retrying.
+
+## Supported Team Messaging APIs
+
+This plugin implements the following RingCentral Team Messaging APIs:
+
+### Implemented
+
+| Category | APIs | Required Scopes |
+|----------|------|-----------------|
+| **Chats** | List Chats, Get Chat | `TeamMessaging` |
+| **Posts** | Create, Update, Delete Post | `TeamMessaging` |
+| **Adaptive Cards** | Create, Get, Update, Delete | `TeamMessaging` |
+| **Profile** | Get Person, Get Current User | `ReadAccounts` |
+| **Attachments** | Upload, Download | `TeamMessaging` |
+
+### Not Yet Implemented
+
+| Category | APIs | Required Scopes |
+|----------|------|-----------------|
+| **Teams** | List, Create, Get, Update, Delete, Join, Leave, Add/Remove Members, Archive/Unarchive | `TeamMessaging` |
+| **Tasks** | List, Create, Get, Update, Delete, Complete | `TeamMessaging` |
+| **Calendar Events** | List, Create, Get, Update, Delete | `TeamMessaging` |
+| **Notes** | List, Create, Get, Update, Delete, Lock, Unlock, Publish | `TeamMessaging`, `Glip` |
+| **Conversations** | List, Create, Get | `TeamMessaging` |
+| **Favorite Chats** | List, Add, Remove | `TeamMessaging` |
+| **Incoming Webhooks** | List, Create, Get, Delete, Activate, Suspend | `TeamMessaging` |
+| **Compliance Exports** | List, Create, Get | `TeamMessaging` (admin) |
 
 ## License
 

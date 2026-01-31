@@ -304,6 +304,21 @@ export async function updateRingCentralAdaptiveCard(params: {
   return { cardId: result.id };
 }
 
+export async function getRingCentralAdaptiveCard(params: {
+  account: ResolvedRingCentralAccount;
+  cardId: string;
+}): Promise<RingCentralAdaptiveCard | null> {
+  const { account, cardId } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  try {
+    const response = await platform.get(`${TM_API_BASE}/adaptive-cards/${cardId}`);
+    return (await response.json()) as RingCentralAdaptiveCard;
+  } catch {
+    return null;
+  }
+}
+
 export async function deleteRingCentralAdaptiveCard(params: {
   account: ResolvedRingCentralAccount;
   cardId: string;
