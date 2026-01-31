@@ -196,9 +196,10 @@ This plugin implements the following RingCentral Team Messaging APIs:
 | Category | APIs | Required Scopes |
 |----------|------|-----------------|
 | **Chats** | List Chats, Get Chat | `TeamMessaging` |
-| **Posts** | Create, Update, Delete Post | `TeamMessaging` |
+| **Conversations** | List, Get, Create/Open | `TeamMessaging` |
+| **Posts** | List Posts, Get Post, Create, Update, Delete | `TeamMessaging` |
 | **Adaptive Cards** | Create, Get, Update, Delete | `TeamMessaging` |
-| **Profile** | Get Person, Get Current User | `ReadAccounts` |
+| **Profile** | Get Person, Get Current User, Get Company Info | `ReadAccounts`, `TeamMessaging` |
 | **Attachments** | Upload, Download | `TeamMessaging` |
 | **Favorite Chats** | List, Add, Remove | `TeamMessaging` |
 
@@ -210,7 +211,6 @@ This plugin implements the following RingCentral Team Messaging APIs:
 | **Tasks** | List, Create, Get, Update, Delete, Complete | `TeamMessaging` |
 | **Calendar Events** | List, Create, Get, Update, Delete | `TeamMessaging` |
 | **Notes** | List, Create, Get, Update, Delete, Lock, Unlock, Publish | `TeamMessaging`, `Glip` |
-| **Conversations** | List, Create, Get | `TeamMessaging` |
 | **Incoming Webhooks** | List, Create, Get, Delete, Activate, Suspend | `TeamMessaging` |
 | **Compliance Exports** | List, Create, Get | `TeamMessaging` (admin) |
 

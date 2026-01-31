@@ -146,6 +146,35 @@ describe("Chat API", () => {
   });
 });
 
+describe("Conversation API", () => {
+  it("listRingCentralConversations should be exported", async () => {
+    const { listRingCentralConversations } = await import("./api.js");
+    expect(typeof listRingCentralConversations).toBe("function");
+  });
+
+  it("getRingCentralConversation should be exported", async () => {
+    const { getRingCentralConversation } = await import("./api.js");
+    expect(typeof getRingCentralConversation).toBe("function");
+  });
+
+  it("createRingCentralConversation should be exported", async () => {
+    const { createRingCentralConversation } = await import("./api.js");
+    expect(typeof createRingCentralConversation).toBe("function");
+  });
+});
+
+describe("Post API", () => {
+  it("getRingCentralPost should be exported", async () => {
+    const { getRingCentralPost } = await import("./api.js");
+    expect(typeof getRingCentralPost).toBe("function");
+  });
+
+  it("listRingCentralPosts should be exported", async () => {
+    const { listRingCentralPosts } = await import("./api.js");
+    expect(typeof listRingCentralPosts).toBe("function");
+  });
+});
+
 describe("Message API", () => {
   it("sendRingCentralMessage should be exported", async () => {
     const { sendRingCentralMessage } = await import("./api.js");
@@ -172,6 +201,13 @@ describe("User API", () => {
   it("getCurrentRingCentralUser should be exported", async () => {
     const { getCurrentRingCentralUser } = await import("./api.js");
     expect(typeof getCurrentRingCentralUser).toBe("function");
+  });
+});
+
+describe("Company API", () => {
+  it("getRingCentralCompanyInfo should be exported", async () => {
+    const { getRingCentralCompanyInfo } = await import("./api.js");
+    expect(typeof getRingCentralCompanyInfo).toBe("function");
   });
 });
 

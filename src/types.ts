@@ -9,6 +9,14 @@ export type RingCentralUser = {
   email?: string;
 };
 
+export type RingCentralCompany = {
+  id?: string;
+  name?: string;
+  domain?: string;
+  creationTime?: string;
+  lastModifiedTime?: string;
+};
+
 export type RingCentralChat = {
   id?: string;
   name?: string;
@@ -17,6 +25,14 @@ export type RingCentralChat = {
   status?: "Active" | "Archived";
   members?: string[];
   isPublic?: boolean;
+  creationTime?: string;
+  lastModifiedTime?: string;
+};
+
+export type RingCentralConversation = {
+  id?: string;
+  type?: "Direct" | "Personal" | "Group";
+  members?: Array<{ id?: string }>;
   creationTime?: string;
   lastModifiedTime?: string;
 };

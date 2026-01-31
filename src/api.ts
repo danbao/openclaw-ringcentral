@@ -3,8 +3,10 @@ import { getRingCentralPlatform } from "./auth.js";
 import { toRingCentralMarkdown } from "./markdown.js";
 import type {
   RingCentralChat,
+  RingCentralConversation,
   RingCentralPost,
   RingCentralUser,
+  RingCentralCompany,
   RingCentralAttachment,
   RingCentralAdaptiveCard,
 } from "./types.js";
@@ -153,6 +155,46 @@ export async function deleteRingCentralMessage(params: {
   await platform.delete(`${TM_API_BASE}/chats/${chatId}/posts/${postId}`);
 }
 
+export async function getRingCentralPost(params: {
+  account: ResolvedRingCentralAccount;
+  chatId: string;
+  postId: string;
+}): Promise<RingCentralPost | null> {
+  const { account, chatId, postId } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  try {
+    const response = await platform.get(`${TM_API_BASE}/chats/${chatId}/posts/${postId}`);
+    return (await response.json()) as RingCentralPost;
+  } catch {
+    return null;
+  }
+}
+
+export async function listRingCentralPosts(params: {
+  account: ResolvedRingCentralAccount;
+  chatId: string;
+  limit?: number;
+  pageToken?: string;
+}): Promise<{ records: RingCentralPost[]; navigation?: { prevPageToken?: string; nextPageToken?: string } }> {
+  const { account, chatId, limit, pageToken } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  const queryParams: Record<string, string> = {};
+  if (limit) queryParams.recordCount = String(limit);
+  if (pageToken) queryParams.pageToken = pageToken;
+
+  const response = await platform.get(`${TM_API_BASE}/chats/${chatId}/posts`, queryParams);
+  const result = (await response.json()) as {
+    records?: RingCentralPost[];
+    navigation?: { prevPageToken?: string; nextPageToken?: string };
+  };
+  return {
+    records: result.records ?? [],
+    navigation: result.navigation,
+  };
+}
+
 export async function getRingCentralChat(params: {
   account: ResolvedRingCentralAccount;
   chatId: string;
@@ -185,6 +227,60 @@ export async function listRingCentralChats(params: {
   return result.records ?? [];
 }
 
+// Conversations API
+export async function listRingCentralConversations(params: {
+  account: ResolvedRingCentralAccount;
+  limit?: number;
+  pageToken?: string;
+}): Promise<{ records: RingCentralConversation[]; navigation?: { prevPageToken?: string; nextPageToken?: string } }> {
+  const { account, limit, pageToken } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  const queryParams: Record<string, string> = {};
+  if (limit) queryParams.recordCount = String(limit);
+  if (pageToken) queryParams.pageToken = pageToken;
+
+  const response = await platform.get(`${TM_API_BASE}/conversations`, queryParams);
+  const result = (await response.json()) as {
+    records?: RingCentralConversation[];
+    navigation?: { prevPageToken?: string; nextPageToken?: string };
+  };
+  return {
+    records: result.records ?? [],
+    navigation: result.navigation,
+  };
+}
+
+export async function getRingCentralConversation(params: {
+  account: ResolvedRingCentralAccount;
+  conversationId: string;
+}): Promise<RingCentralConversation | null> {
+  const { account, conversationId } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  try {
+    const response = await platform.get(`${TM_API_BASE}/conversations/${conversationId}`);
+    return (await response.json()) as RingCentralConversation;
+  } catch {
+    return null;
+  }
+}
+
+export async function createRingCentralConversation(params: {
+  account: ResolvedRingCentralAccount;
+  memberIds: string[];
+}): Promise<RingCentralConversation | null> {
+  const { account, memberIds } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  const body = {
+    members: memberIds.map((id) => ({ id })),
+  };
+
+  const response = await platform.post(`${TM_API_BASE}/conversations`, body);
+  return (await response.json()) as RingCentralConversation;
+}
+
 export async function getRingCentralUser(params: {
   account: ResolvedRingCentralAccount;
   userId: string;
@@ -209,6 +305,20 @@ export async function getCurrentRingCentralUser(params: {
   try {
     const response = await platform.get("/restapi/v1.0/account/~/extension/~");
     return (await response.json()) as RingCentralUser;
+  } catch {
+    return null;
+  }
+}
+
+export async function getRingCentralCompanyInfo(params: {
+  account: ResolvedRingCentralAccount;
+}): Promise<RingCentralCompany | null> {
+  const { account } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  try {
+    const response = await platform.get(`${TM_API_BASE}/companies/~`);
+    return (await response.json()) as RingCentralCompany;
   } catch {
     return null;
   }
