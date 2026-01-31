@@ -21,19 +21,31 @@ import type {
   RingCentralMention,
 } from "./types.js";
 
+export type RingCentralLogger = {
+  debug: (message: string) => void;
+  info: (message: string) => void;
+  warn: (message: string) => void;
+  error: (message: string) => void;
+};
+
 export type RingCentralRuntimeEnv = {
   log?: (message: string) => void;
   error?: (message: string) => void;
 };
+
+function createLogger(core: RingCentralCoreRuntime): RingCentralLogger {
+  return core.logging.getChildLogger({ plugin: "ringcentral" });
+}
 
 // Track recently sent message IDs to avoid processing bot's own replies
 const recentlySentMessageIds = new Set<string>();
 const MESSAGE_ID_TTL = 60000; // 60 seconds
 
 // Reconnection settings
-const RECONNECT_INITIAL_DELAY = 1000; // 1 second
-const RECONNECT_MAX_DELAY = 60000; // 60 seconds
-const RECONNECT_MAX_ATTEMPTS = 10;
+const RECONNECT_INITIAL_DELAY = 5000; // 5 seconds (increased to avoid 429)
+const RECONNECT_MAX_DELAY = 300000; // 5 minutes (increased for rate limiting)
+const RECONNECT_MAX_ATTEMPTS = 5; // Reduced attempts
+const RATE_LIMIT_BACKOFF = 60000; // 1 minute backoff on 429
 
 function trackSentMessageId(messageId: string): void {
   recentlySentMessageIds.add(messageId);
@@ -54,13 +66,22 @@ export type RingCentralMonitorOptions = {
 
 type RingCentralCoreRuntime = ReturnType<typeof getRingCentralRuntime>;
 
+// Shared logger instance (lazy initialized)
+let sharedLogger: RingCentralLogger | null = null;
+
+function getLogger(core: RingCentralCoreRuntime): RingCentralLogger {
+  if (!sharedLogger) {
+    sharedLogger = createLogger(core);
+  }
+  return sharedLogger;
+}
+
 function logVerbose(
   core: RingCentralCoreRuntime,
-  runtime: RingCentralRuntimeEnv,
   message: string,
 ) {
   if (core.logging.shouldLogVerbose()) {
-    runtime.log?.(`[ringcentral] ${message}`);
+    getLogger(core).debug(message);
   }
 }
 
@@ -190,13 +211,13 @@ async function processMessageWithPipeline(params: {
   // Check 1: Skip if this is a message we recently sent
   const messageId = eventBody.id ?? "";
   if (messageId && isOwnSentMessage(messageId)) {
-    logVerbose(core, runtime, `skip own sent message: ${messageId}`);
+    logVerbose(core, `skip own sent message: ${messageId}`);
     return;
   }
   
   // Check 2: Skip typing/thinking indicators (pattern-based)
   if (rawBody.includes("thinking...") || rawBody.includes("typing...")) {
-    logVerbose(core, runtime, "skip typing indicator message");
+    logVerbose(core, "skip typing indicator message");
     return;
   }
   
@@ -208,7 +229,7 @@ async function processMessageWithPipeline(params: {
   
   if (selfOnly && ownerId) {
     if (senderId !== ownerId) {
-      logVerbose(core, runtime, `ignore message from non-owner: ${senderId} (selfOnly mode)`);
+      logVerbose(core, `ignore message from non-owner: ${senderId} (selfOnly mode)`);
       return;
     }
   }
@@ -233,7 +254,7 @@ async function processMessageWithPipeline(params: {
 
   // In selfOnly mode, only allow "Personal" chat (conversation with yourself)
   if (selfOnly && !isPersonalChat) {
-    logVerbose(core, runtime, `ignore non-personal chat in selfOnly mode: chatType=${chatType}`);
+    logVerbose(core, `ignore non-personal chat in selfOnly mode: chatType=${chatType}`);
     return;
   }
 
@@ -250,7 +271,7 @@ async function processMessageWithPipeline(params: {
 
   if (isGroup) {
     if (groupPolicy === "disabled") {
-      logVerbose(core, runtime, `drop group message (groupPolicy=disabled, chat=${chatId})`);
+      logVerbose(core, `drop group message (groupPolicy=disabled, chat=${chatId})`);
       return;
     }
     const groupAllowlistConfigured = groupConfigResolved.allowlistConfigured;
@@ -266,19 +287,19 @@ async function processMessageWithPipeline(params: {
         return;
       }
       if (!groupAllowed) {
-        logVerbose(core, runtime, `drop group message (not allowlisted, chat=${chatId})`);
+        logVerbose(core, `drop group message (not allowlisted, chat=${chatId})`);
         return;
       }
     }
     if (groupEntry?.enabled === false || groupEntry?.allow === false) {
-      logVerbose(core, runtime, `drop group message (chat disabled, chat=${chatId})`);
+      logVerbose(core, `drop group message (chat disabled, chat=${chatId})`);
       return;
     }
 
     if (groupUsers.length > 0) {
       const ok = isSenderAllowed(senderId, groupUsers.map((v) => String(v)));
       if (!ok) {
-        logVerbose(core, runtime, `drop group message (sender not allowed, ${senderId})`);
+        logVerbose(core, `drop group message (sender not allowed, ${senderId})`);
         return;
       }
     }
@@ -330,7 +351,7 @@ async function processMessageWithPipeline(params: {
     // Plugin only handles mention gating; AI decides whether to respond or NO_REPLY
     
     if (mentionGate.shouldSkip) {
-      logVerbose(core, runtime, `drop group message (mention required, chat=${chatId})`);
+      logVerbose(core, `drop group message (mention required, chat=${chatId})`);
       return;
     }
   }
@@ -341,11 +362,11 @@ async function processMessageWithPipeline(params: {
   if (!isGroup && !selfOnly) {
     // Non-selfOnly mode: check dmPolicy and allowFrom
     if (dmPolicy === "disabled") {
-      logVerbose(core, runtime, `ignore DM (dmPolicy=disabled)`);
+      logVerbose(core, `ignore DM (dmPolicy=disabled)`);
       return;
     }
     if (dmPolicy === "allowlist" && !isSenderAllowed(senderId, effectiveAllowFrom)) {
-      logVerbose(core, runtime, `ignore DM from ${senderId} (not in allowFrom)`);
+      logVerbose(core, `ignore DM from ${senderId} (not in allowFrom)`);
       return;
     }
   }
@@ -355,7 +376,7 @@ async function processMessageWithPipeline(params: {
     core.channel.commands.isControlCommandMessage(rawBody, config) &&
     commandAuthorized !== true
   ) {
-    logVerbose(core, runtime, `ringcentral: drop control command from ${senderId}`);
+    logVerbose(core, `ringcentral: drop control command from ${senderId}`);
     return;
   }
 
@@ -608,6 +629,7 @@ export async function startRingCentralMonitor(
 ): Promise<() => void> {
   const { account, config, runtime, abortSignal, statusSink } = options;
   const core = getRingCentralRuntime();
+  const logger = createLogger(core);
 
   let wsSubscription: Awaited<ReturnType<ReturnType<InstanceType<typeof Subscriptions>["createSubscription"]>["register"]>> | null = null;
   let reconnectAttempts = 0;
@@ -628,7 +650,7 @@ export async function startRingCentralMonitor(
   const createSubscription = async (): Promise<void> => {
     if (isShuttingDown || abortSignal.aborted) return;
 
-    runtime.log?.(`[${account.accountId}] Starting RingCentral WebSocket subscription...`);
+    logger.info(`[${account.accountId}] Starting RingCentral WebSocket subscription...`);
 
     try {
       // Get SDK instance
@@ -645,15 +667,15 @@ export async function startRingCentralMonitor(
           const response = await platform.get("/restapi/v1.0/account/~/extension/~");
           const userInfo = await response.json();
           ownerId = userInfo?.id?.toString();
-          runtime.log?.(`[${account.accountId}] Authenticated as extension: ${ownerId}`);
+          logger.info(`[${account.accountId}] Authenticated as extension: ${ownerId}`);
         } catch (err) {
-          runtime.error?.(`[${account.accountId}] Failed to get current user: ${String(err)}`);
+          logger.error(`[${account.accountId}] Failed to get current user: ${String(err)}`);
         }
       }
 
       // Handle notifications
       subscription.on(subscription.events.notification, (event: unknown) => {
-        logVerbose(core, runtime, `WebSocket notification received: ${JSON.stringify(event).slice(0, 500)}`);
+        logger.debug(`WebSocket notification received: ${JSON.stringify(event).slice(0, 500)}`);
         const evt = event as RingCentralWebhookEvent;
         processWebSocketEvent({
           event: evt,
@@ -664,7 +686,7 @@ export async function startRingCentralMonitor(
           statusSink,
           ownerId,
         }).catch((err) => {
-          runtime.error?.(`[${account.accountId}] WebSocket event processing failed: ${String(err)}`);
+          logger.error(`[${account.accountId}] WebSocket event processing failed: ${String(err)}`);
         });
       });
 
@@ -676,26 +698,40 @@ export async function startRingCentralMonitor(
         ])
         .register();
       
-      runtime.log?.(`[${account.accountId}] RingCentral WebSocket subscription established`);
+      logger.info(`[${account.accountId}] RingCentral WebSocket subscription established`);
       reconnectAttempts = 0; // Reset on success
 
     } catch (err) {
-      runtime.error?.(`[${account.accountId}] Failed to create WebSocket subscription: ${String(err)}`);
-      scheduleReconnect();
+      const errStr = String(err);
+      logger.error(`[${account.accountId}] Failed to create WebSocket subscription: ${errStr}`);
+      
+      // Check for rate limiting (429) or auth errors
+      const isRateLimited = errStr.includes("429") || errStr.includes("rate") || errStr.includes("Rate");
+      const isAuthError = errStr.includes("401") || errStr.includes("Unauthorized") || errStr.includes("invalid_grant");
+      
+      if (isAuthError) {
+        logger.error(`[${account.accountId}] Authentication failed. Please check your credentials.`);
+        // Don't retry on auth errors - they won't self-resolve
+        return;
+      }
+      
+      scheduleReconnect(isRateLimited);
     }
   };
 
   // Schedule reconnection with exponential backoff
-  const scheduleReconnect = () => {
+  const scheduleReconnect = (isRateLimited = false) => {
     if (isShuttingDown || abortSignal.aborted) return;
     if (reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
-      runtime.error?.(`[${account.accountId}] Max reconnection attempts (${RECONNECT_MAX_ATTEMPTS}) reached. Giving up.`);
+      logger.error(`[${account.accountId}] Max reconnection attempts (${RECONNECT_MAX_ATTEMPTS}) reached. Giving up.`);
       return;
     }
 
-    const delay = getReconnectDelay();
+    // Use longer delay if rate limited
+    const baseDelay = isRateLimited ? RATE_LIMIT_BACKOFF : getReconnectDelay();
+    const delay = Math.min(baseDelay, RECONNECT_MAX_DELAY);
     reconnectAttempts++;
-    runtime.log?.(`[${account.accountId}] Scheduling reconnection attempt ${reconnectAttempts}/${RECONNECT_MAX_ATTEMPTS} in ${delay}ms...`);
+    logger.warn(`[${account.accountId}] Scheduling reconnection attempt ${reconnectAttempts}/${RECONNECT_MAX_ATTEMPTS} in ${delay}ms${isRateLimited ? " (rate limited)" : ""}...`);
 
     // Clean up existing WsSubscription
     if (wsSubscription) {
@@ -706,7 +742,7 @@ export async function startRingCentralMonitor(
     reconnectTimeout = setTimeout(() => {
       reconnectTimeout = null;
       createSubscription().catch((err) => {
-        runtime.error?.(`[${account.accountId}] Reconnection failed: ${String(err)}`);
+        logger.error(`[${account.accountId}] Reconnection failed: ${String(err)}`);
       });
     }, delay);
   };
@@ -717,7 +753,7 @@ export async function startRingCentralMonitor(
   // Handle abort signal
   const cleanup = () => {
     isShuttingDown = true;
-    runtime.log?.(`[${account.accountId}] Stopping RingCentral WebSocket subscription...`);
+    logger.info(`[${account.accountId}] Stopping RingCentral WebSocket subscription...`);
     
     if (reconnectTimeout) {
       clearTimeout(reconnectTimeout);
@@ -726,7 +762,7 @@ export async function startRingCentralMonitor(
     
     if (wsSubscription) {
       wsSubscription.revoke().catch((err) => {
-        runtime.error?.(`[${account.accountId}] Failed to revoke subscription: ${String(err)}`);
+        logger.error(`[${account.accountId}] Failed to revoke subscription: ${String(err)}`);
       });
       wsSubscription = null;
     }

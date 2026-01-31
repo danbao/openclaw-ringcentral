@@ -13,12 +13,17 @@ declare module "openclaw/plugin-sdk" {
     [key: string]: unknown;
   };
 
+  export type PluginLogger = {
+    debug: (message: string) => void;
+    info: (message: string) => void;
+    warn: (message: string) => void;
+    error: (message: string) => void;
+  };
+
   export type PluginRuntime = {
-    log: {
-      info(msg: string, ...args: unknown[]): void;
-      warn(msg: string, ...args: unknown[]): void;
-      error(msg: string, ...args: unknown[]): void;
-      debug(msg: string, ...args: unknown[]): void;
+    logging: {
+      shouldLogVerbose: () => boolean;
+      getChildLogger: (bindings: Record<string, unknown>, opts?: { level?: string }) => PluginLogger;
     };
     [key: string]: unknown;
   };
