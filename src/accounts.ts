@@ -139,7 +139,7 @@ export function resolveRingCentralAccount(params: {
   cfg: OpenClawConfig;
   accountId?: string | null;
 }): ResolvedRingCentralAccount {
-  const accountId = normalizeAccountId(params.accountId);
+  const accountId = normalizeAccountId(params.accountId ?? undefined);
   const baseEnabled =
     (params.cfg.channels?.ringcentral as RingCentralConfig | undefined)?.enabled !== false;
   const merged = mergeRingCentralAccountConfig(params.cfg, accountId);
