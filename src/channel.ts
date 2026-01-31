@@ -74,7 +74,7 @@ export const ringcentralDock: ChannelDock = {
     resolveReplyToMode: ({ cfg }) =>
       (cfg.channels?.ringcentral as RingCentralConfig | undefined)?.replyToMode ?? "off",
     buildToolContext: ({ context, hasRepliedRef }) => ({
-      currentChannelId: context.To?.trim() || undefined,
+      currentChannelId: (context.To as string | undefined)?.trim() || undefined,
       currentThreadTs: undefined,
       hasRepliedRef,
     }),
@@ -305,7 +305,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
         cfg: cfg as OpenClawConfig,
         channelKey: "ringcentral",
         accountId,
-        name: input.name,
+        name: input.name as string | undefined,
       });
       const next =
         accountId !== DEFAULT_ACCOUNT_ID
@@ -315,6 +315,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
             })
           : namedConfig;
       // Build nested credentials block
+      const inputServer = input.server as string | undefined;
       const credentialsPatch = input.useEnv
         ? {}
         : {
@@ -322,11 +323,11 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
               ...(input.clientId ? { clientId: input.clientId } : {}),
               ...(input.clientSecret ? { clientSecret: input.clientSecret } : {}),
               ...(input.jwt ? { jwt: input.jwt } : {}),
-              ...(input.server?.trim() ? { server: input.server.trim() } : {}),
+              ...(inputServer?.trim() ? { server: inputServer.trim() } : {}),
             },
           };
       // Only include credentials if it has any values
-      const hasCredentials = input.clientId || input.clientSecret || input.jwt || input.server?.trim();
+      const hasCredentials = input.clientId || input.clientSecret || input.jwt || inputServer?.trim();
       const configPatch = input.useEnv || !hasCredentials ? {} : credentialsPatch;
       if (accountId === DEFAULT_ACCOUNT_ID) {
         return {

@@ -12,6 +12,100 @@ import type {
 // Team Messaging API endpoints
 const TM_API_BASE = "/team-messaging/v1";
 
+export type RingCentralApiErrorInfo = {
+  httpStatus?: number;
+  requestId?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  accountId?: string;
+  errors?: Array<{ errorCode?: string; message?: string; parameterName?: string }>;
+};
+
+export function extractRcApiError(err: unknown, accountId?: string): RingCentralApiErrorInfo {
+  const info: RingCentralApiErrorInfo = {};
+  if (accountId) info.accountId = accountId;
+
+  if (!err || typeof err !== "object") {
+    info.errorMessage = String(err);
+    return info;
+  }
+
+  const e = err as Record<string, unknown>;
+
+  // @ringcentral/sdk wraps errors with response object
+  const response = e.response as Record<string, unknown> | undefined;
+  if (response) {
+    info.httpStatus = typeof response.status === "number" ? response.status : undefined;
+    
+    // Extract request ID from headers
+    const headers = response.headers as Record<string, unknown> | undefined;
+    if (headers) {
+      // headers can be a Headers object or plain object
+      if (typeof (headers as any).get === "function") {
+        info.requestId = (headers as any).get("x-request-id") ?? (headers as any).get("rcrequestid");
+      } else {
+        info.requestId = (headers["x-request-id"] ?? headers["rcrequestid"]) as string | undefined;
+      }
+    }
+  }
+
+  // Try to extract error body (SDK often attaches parsed JSON to error)
+  const body = (e._response as Record<string, unknown> | undefined) ?? 
+               (e.body as Record<string, unknown> | undefined) ??
+               (e.data as Record<string, unknown> | undefined);
+  if (body && typeof body === "object") {
+    info.errorCode = body.errorCode as string | undefined;
+    info.errorMessage = body.message as string | undefined;
+    if (Array.isArray(body.errors)) {
+      info.errors = body.errors;
+    }
+  }
+
+  // Fallback: parse message if it looks like JSON
+  if (!info.errorCode && typeof e.message === "string") {
+    const msg = e.message;
+    try {
+      const parsed = JSON.parse(msg);
+      if (parsed && typeof parsed === "object") {
+        info.errorCode = parsed.errorCode;
+        info.errorMessage = parsed.message ?? info.errorMessage;
+        if (Array.isArray(parsed.errors)) {
+          info.errors = parsed.errors;
+        }
+      }
+    } catch {
+      // Not JSON, use as-is
+      info.errorMessage = info.errorMessage ?? msg;
+    }
+  }
+
+  // Extract from standard Error properties
+  if (!info.errorMessage && typeof e.message === "string") {
+    info.errorMessage = e.message;
+  }
+
+  return info;
+}
+
+export function formatRcApiError(info: RingCentralApiErrorInfo): string {
+  const parts: string[] = [];
+  
+  if (info.httpStatus) parts.push(`HTTP ${info.httpStatus}`);
+  if (info.errorCode) parts.push(`ErrorCode=${info.errorCode}`);
+  if (info.requestId) parts.push(`RequestId=${info.requestId}`);
+  if (info.accountId) parts.push(`AccountId=${info.accountId}`);
+  if (info.errorMessage) parts.push(`Message="${info.errorMessage}"`);
+  
+  if (info.errors && info.errors.length > 0) {
+    const errDetails = info.errors
+      .map((e) => `${e.errorCode ?? "?"}: ${e.message ?? "?"}${e.parameterName ? ` (${e.parameterName})` : ""}`)
+      .join("; ");
+    parts.push(`Details=[${errDetails}]`);
+  }
+  
+  return parts.length > 0 ? parts.join(" | ") : "Unknown error";
+}
+
 export async function sendRingCentralMessage(params: {
   account: ResolvedRingCentralAccount;
   chatId: string;
@@ -132,7 +226,7 @@ export async function uploadRingCentralAttachment(params: {
 
   // Create FormData for multipart upload
   const formData = new FormData();
-  const blob = new Blob([buffer], { type: contentType || "application/octet-stream" });
+  const blob = new Blob([new Uint8Array(buffer)], { type: contentType || "application/octet-stream" });
   formData.append("file", blob, filename);
 
   const response = await platform.post(

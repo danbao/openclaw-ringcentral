@@ -1,6 +1,6 @@
 {
   "name": "openclaw-ringcentral",
-  "version": "2026.1.29",
+  "version": "2026.1.30-beta.3",
   "type": "module",
   "main": "index.ts",
   "description": "OpenClaw RingCentral Team Messaging channel plugin",
@@ -57,6 +57,7 @@
     }
   },
   "dependencies": {
+    "@rc-ex/ws": "^1.0.0",
     "@ringcentral/sdk": "^5.0.0",
     "@ringcentral/subscriptions": "^5.0.0",
     "isomorphic-ws": "^5.0.0",
