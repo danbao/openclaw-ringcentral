@@ -113,6 +113,11 @@ describe("Adaptive Card API", () => {
     vi.clearAllMocks();
   });
 
+  it("getRingCentralAdaptiveCard should be exported", async () => {
+    const { getRingCentralAdaptiveCard } = await import("./api.js");
+    expect(typeof getRingCentralAdaptiveCard).toBe("function");
+  });
+
   it("sendRingCentralAdaptiveCard should be exported", async () => {
     const { sendRingCentralAdaptiveCard } = await import("./api.js");
     expect(typeof sendRingCentralAdaptiveCard).toBe("function");
