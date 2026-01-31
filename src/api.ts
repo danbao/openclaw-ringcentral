@@ -5,6 +5,7 @@ import type {
   RingCentralChat,
   RingCentralPost,
   RingCentralUser,
+  RingCentralCompany,
   RingCentralAttachment,
   RingCentralAdaptiveCard,
 } from "./types.js";
@@ -209,6 +210,20 @@ export async function getCurrentRingCentralUser(params: {
   try {
     const response = await platform.get("/restapi/v1.0/account/~/extension/~");
     return (await response.json()) as RingCentralUser;
+  } catch {
+    return null;
+  }
+}
+
+export async function getRingCentralCompanyInfo(params: {
+  account: ResolvedRingCentralAccount;
+}): Promise<RingCentralCompany | null> {
+  const { account } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  try {
+    const response = await platform.get(`${TM_API_BASE}/companies/~`);
+    return (await response.json()) as RingCentralCompany;
   } catch {
     return null;
   }
