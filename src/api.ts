@@ -328,6 +328,46 @@ export async function deleteRingCentralAdaptiveCard(params: {
   await platform.delete(`${TM_API_BASE}/adaptive-cards/${cardId}`);
 }
 
+// Favorite Chats API
+export async function listRingCentralFavoriteChats(params: {
+  account: ResolvedRingCentralAccount;
+  limit?: number;
+}): Promise<{ records: RingCentralChat[]; navigation?: { nextPageToken?: string } }> {
+  const { account, limit } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  const queryParams: Record<string, string> = {};
+  if (limit) queryParams.recordCount = String(limit);
+
+  const response = await platform.get(`${TM_API_BASE}/favorites`, queryParams);
+  const result = (await response.json()) as {
+    records?: RingCentralChat[];
+    navigation?: { prevPageToken?: string; nextPageToken?: string };
+  };
+  return {
+    records: result.records ?? [],
+    navigation: result.navigation,
+  };
+}
+
+export async function addRingCentralFavoriteChat(params: {
+  account: ResolvedRingCentralAccount;
+  chatId: string;
+}): Promise<void> {
+  const { account, chatId } = params;
+  const platform = await getRingCentralPlatform(account);
+  await platform.post(`${TM_API_BASE}/favorites`, { id: chatId });
+}
+
+export async function removeRingCentralFavoriteChat(params: {
+  account: ResolvedRingCentralAccount;
+  chatId: string;
+}): Promise<void> {
+  const { account, chatId } = params;
+  const platform = await getRingCentralPlatform(account);
+  await platform.delete(`${TM_API_BASE}/favorites/${chatId}`);
+}
+
 export async function probeRingCentral(
   account: ResolvedRingCentralAccount,
 ): Promise<{ ok: boolean; error?: string; elapsedMs: number }> {

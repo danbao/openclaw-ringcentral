@@ -187,6 +187,23 @@ describe("Attachment API", () => {
   });
 });
 
+describe("Favorite Chats API", () => {
+  it("listRingCentralFavoriteChats should be exported", async () => {
+    const { listRingCentralFavoriteChats } = await import("./api.js");
+    expect(typeof listRingCentralFavoriteChats).toBe("function");
+  });
+
+  it("addRingCentralFavoriteChat should be exported", async () => {
+    const { addRingCentralFavoriteChat } = await import("./api.js");
+    expect(typeof addRingCentralFavoriteChat).toBe("function");
+  });
+
+  it("removeRingCentralFavoriteChat should be exported", async () => {
+    const { removeRingCentralFavoriteChat } = await import("./api.js");
+    expect(typeof removeRingCentralFavoriteChat).toBe("function");
+  });
+});
+
 describe("probeRingCentral", () => {
   it("should be exported", async () => {
     const { probeRingCentral } = await import("./api.js");
