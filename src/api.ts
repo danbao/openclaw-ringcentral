@@ -154,6 +154,46 @@ export async function deleteRingCentralMessage(params: {
   await platform.delete(`${TM_API_BASE}/chats/${chatId}/posts/${postId}`);
 }
 
+export async function getRingCentralPost(params: {
+  account: ResolvedRingCentralAccount;
+  chatId: string;
+  postId: string;
+}): Promise<RingCentralPost | null> {
+  const { account, chatId, postId } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  try {
+    const response = await platform.get(`${TM_API_BASE}/chats/${chatId}/posts/${postId}`);
+    return (await response.json()) as RingCentralPost;
+  } catch {
+    return null;
+  }
+}
+
+export async function listRingCentralPosts(params: {
+  account: ResolvedRingCentralAccount;
+  chatId: string;
+  limit?: number;
+  pageToken?: string;
+}): Promise<{ records: RingCentralPost[]; navigation?: { prevPageToken?: string; nextPageToken?: string } }> {
+  const { account, chatId, limit, pageToken } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  const queryParams: Record<string, string> = {};
+  if (limit) queryParams.recordCount = String(limit);
+  if (pageToken) queryParams.pageToken = pageToken;
+
+  const response = await platform.get(`${TM_API_BASE}/chats/${chatId}/posts`, queryParams);
+  const result = (await response.json()) as {
+    records?: RingCentralPost[];
+    navigation?: { prevPageToken?: string; nextPageToken?: string };
+  };
+  return {
+    records: result.records ?? [],
+    navigation: result.navigation,
+  };
+}
+
 export async function getRingCentralChat(params: {
   account: ResolvedRingCentralAccount;
   chatId: string;

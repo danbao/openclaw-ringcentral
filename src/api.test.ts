@@ -146,6 +146,18 @@ describe("Chat API", () => {
   });
 });
 
+describe("Post API", () => {
+  it("getRingCentralPost should be exported", async () => {
+    const { getRingCentralPost } = await import("./api.js");
+    expect(typeof getRingCentralPost).toBe("function");
+  });
+
+  it("listRingCentralPosts should be exported", async () => {
+    const { listRingCentralPosts } = await import("./api.js");
+    expect(typeof listRingCentralPosts).toBe("function");
+  });
+});
+
 describe("Message API", () => {
   it("sendRingCentralMessage should be exported", async () => {
     const { sendRingCentralMessage } = await import("./api.js");
