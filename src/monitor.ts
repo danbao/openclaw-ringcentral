@@ -1,5 +1,7 @@
 import { Subscriptions } from "@ringcentral/subscriptions";
-import WebSocketExtension, { Events as RcWsEvents } from "@rc-ex/ws";
+import RcWsExtension, { Events as RcWsEvents } from "@rc-ex/ws";
+const WebSocketExtension = RcWsExtension.default ?? RcWsExtension;
+type WebSocketExtension = InstanceType<typeof WebSocketExtension>;
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import { resolveMentionGatingWithBypass } from "openclaw/plugin-sdk";
@@ -537,7 +539,7 @@ async function processMessageWithPipeline(params: {
   void core.channel.session
     .recordSessionMetaFromInbound({
       storePath,
-      sessionKey: ctxPayload.SessionKey ?? route.sessionKey,
+      sessionKey: (ctxPayload.SessionKey as string | undefined) ?? route.sessionKey,
       ctx: ctxPayload,
     })
     .catch((err) => {
@@ -769,11 +771,11 @@ export async function startRingCentralMonitor(
 
       // Extra diagnostics: log versions so we can pin a working combo.
       try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        // @ts-ignore - dynamic import of package.json for version logging
         const sdkVer = (await import("@ringcentral/sdk/package.json", { with: { type: "json" } } as any))?.default?.version;
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        // @ts-ignore - dynamic import of package.json for version logging
         const subsVer = (await import("@ringcentral/subscriptions/package.json", { with: { type: "json" } } as any))?.default?.version;
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        // @ts-ignore - dynamic import of package.json for version logging
         const rcwsVer = (await import("@rc-ex/ws/package.json", { with: { type: "json" } } as any))?.default?.version;
         logger.debug(`[${account.accountId}] rc sdk versions: @ringcentral/sdk=${sdkVer} @ringcentral/subscriptions=${subsVer} @rc-ex/ws=${rcwsVer}`);
       } catch {

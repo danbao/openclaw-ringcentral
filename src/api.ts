@@ -226,7 +226,7 @@ export async function uploadRingCentralAttachment(params: {
 
   // Create FormData for multipart upload
   const formData = new FormData();
-  const blob = new Blob([buffer], { type: contentType || "application/octet-stream" });
+  const blob = new Blob([new Uint8Array(buffer)], { type: contentType || "application/octet-stream" });
   formData.append("file", blob, filename);
 
   const response = await platform.post(
