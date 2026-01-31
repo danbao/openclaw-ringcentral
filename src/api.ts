@@ -12,6 +12,7 @@ import type {
   RingCentralTask,
   RingCentralEvent,
   RingCentralNote,
+  RingCentralWebhook,
 } from "./types.js";
 
 // Team Messaging API endpoints
@@ -808,6 +809,87 @@ export async function publishRingCentralNote(params: {
 
   const response = await platform.post(`${TM_API_BASE}/notes/${noteId}/publish`, {});
   return (await response.json()) as RingCentralNote;
+}
+
+// Incoming Webhooks API
+export async function listRingCentralWebhooks(params: {
+  account: ResolvedRingCentralAccount;
+  limit?: number;
+  pageToken?: string;
+}): Promise<{ records: RingCentralWebhook[]; navigation?: { nextPageToken?: string } }> {
+  const { account, limit, pageToken } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  const queryParams: Record<string, string> = {};
+  if (limit) queryParams.recordCount = String(limit);
+  if (pageToken) queryParams.pageToken = pageToken;
+
+  const response = await platform.get(`${TM_API_BASE}/webhooks`, queryParams);
+  const result = (await response.json()) as {
+    records?: RingCentralWebhook[];
+    navigation?: { prevPageToken?: string; nextPageToken?: string };
+  };
+  return {
+    records: result.records ?? [],
+    navigation: result.navigation,
+  };
+}
+
+export async function createRingCentralWebhook(params: {
+  account: ResolvedRingCentralAccount;
+  uri: string;
+  chatIds?: string[];
+}): Promise<RingCentralWebhook> {
+  const { account, uri, chatIds } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  const body: Record<string, unknown> = { uri };
+  if (chatIds && chatIds.length > 0) body.chatIds = chatIds;
+
+  const response = await platform.post(`${TM_API_BASE}/webhooks`, body);
+  return (await response.json()) as RingCentralWebhook;
+}
+
+export async function getRingCentralWebhook(params: {
+  account: ResolvedRingCentralAccount;
+  webhookId: string;
+}): Promise<RingCentralWebhook | null> {
+  const { account, webhookId } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  try {
+    const response = await platform.get(`${TM_API_BASE}/webhooks/${webhookId}`);
+    return (await response.json()) as RingCentralWebhook;
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteRingCentralWebhook(params: {
+  account: ResolvedRingCentralAccount;
+  webhookId: string;
+}): Promise<void> {
+  const { account, webhookId } = params;
+  const platform = await getRingCentralPlatform(account);
+  await platform.delete(`${TM_API_BASE}/webhooks/${webhookId}`);
+}
+
+export async function activateRingCentralWebhook(params: {
+  account: ResolvedRingCentralAccount;
+  webhookId: string;
+}): Promise<void> {
+  const { account, webhookId } = params;
+  const platform = await getRingCentralPlatform(account);
+  await platform.post(`${TM_API_BASE}/webhooks/${webhookId}/activate`, {});
+}
+
+export async function suspendRingCentralWebhook(params: {
+  account: ResolvedRingCentralAccount;
+  webhookId: string;
+}): Promise<void> {
+  const { account, webhookId } = params;
+  const platform = await getRingCentralPlatform(account);
+  await platform.post(`${TM_API_BASE}/webhooks/${webhookId}/suspend`, {});
 }
 
 export async function probeRingCentral(

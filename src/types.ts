@@ -50,6 +50,16 @@ export type RingCentralNote = {
   lastModifiedTime?: string;
 };
 
+export type RingCentralWebhook = {
+  id?: string;
+  creatorId?: string;
+  chatIds?: string[];
+  uri?: string;
+  status?: "Active" | "Suspended" | "Frozen";
+  creationTime?: string;
+  lastModifiedTime?: string;
+};
+
 export type RingCentralEvent = {
   id?: string;
   chatId?: string;
