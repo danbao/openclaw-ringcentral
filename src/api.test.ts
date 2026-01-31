@@ -113,6 +113,11 @@ describe("Adaptive Card API", () => {
     vi.clearAllMocks();
   });
 
+  it("getRingCentralAdaptiveCard should be exported", async () => {
+    const { getRingCentralAdaptiveCard } = await import("./api.js");
+    expect(typeof getRingCentralAdaptiveCard).toBe("function");
+  });
+
   it("sendRingCentralAdaptiveCard should be exported", async () => {
     const { sendRingCentralAdaptiveCard } = await import("./api.js");
     expect(typeof sendRingCentralAdaptiveCard).toBe("function");
@@ -179,6 +184,13 @@ describe("User API", () => {
   it("getCurrentRingCentralUser should be exported", async () => {
     const { getCurrentRingCentralUser } = await import("./api.js");
     expect(typeof getCurrentRingCentralUser).toBe("function");
+  });
+});
+
+describe("Company API", () => {
+  it("getRingCentralCompanyInfo should be exported", async () => {
+    const { getRingCentralCompanyInfo } = await import("./api.js");
+    expect(typeof getRingCentralCompanyInfo).toBe("function");
   });
 });
 

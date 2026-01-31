@@ -9,6 +9,14 @@ export type RingCentralUser = {
   email?: string;
 };
 
+export type RingCentralCompany = {
+  id?: string;
+  name?: string;
+  domain?: string;
+  creationTime?: string;
+  lastModifiedTime?: string;
+};
+
 export type RingCentralChat = {
   id?: string;
   name?: string;
