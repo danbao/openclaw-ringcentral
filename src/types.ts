@@ -29,6 +29,14 @@ export type RingCentralChat = {
   lastModifiedTime?: string;
 };
 
+export type RingCentralConversation = {
+  id?: string;
+  type?: "Direct" | "Personal" | "Group";
+  members?: Array<{ id?: string }>;
+  creationTime?: string;
+  lastModifiedTime?: string;
+};
+
 export type RingCentralPost = {
   id?: string;
   groupId?: string;

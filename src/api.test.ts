@@ -146,6 +146,23 @@ describe("Chat API", () => {
   });
 });
 
+describe("Conversation API", () => {
+  it("listRingCentralConversations should be exported", async () => {
+    const { listRingCentralConversations } = await import("./api.js");
+    expect(typeof listRingCentralConversations).toBe("function");
+  });
+
+  it("getRingCentralConversation should be exported", async () => {
+    const { getRingCentralConversation } = await import("./api.js");
+    expect(typeof getRingCentralConversation).toBe("function");
+  });
+
+  it("createRingCentralConversation should be exported", async () => {
+    const { createRingCentralConversation } = await import("./api.js");
+    expect(typeof createRingCentralConversation).toBe("function");
+  });
+});
+
 describe("Post API", () => {
   it("getRingCentralPost should be exported", async () => {
     const { getRingCentralPost } = await import("./api.js");

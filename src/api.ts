@@ -3,6 +3,7 @@ import { getRingCentralPlatform } from "./auth.js";
 import { toRingCentralMarkdown } from "./markdown.js";
 import type {
   RingCentralChat,
+  RingCentralConversation,
   RingCentralPost,
   RingCentralUser,
   RingCentralCompany,
@@ -224,6 +225,60 @@ export async function listRingCentralChats(params: {
   const response = await platform.get(`${TM_API_BASE}/chats`, queryParams);
   const result = (await response.json()) as { records?: RingCentralChat[] };
   return result.records ?? [];
+}
+
+// Conversations API
+export async function listRingCentralConversations(params: {
+  account: ResolvedRingCentralAccount;
+  limit?: number;
+  pageToken?: string;
+}): Promise<{ records: RingCentralConversation[]; navigation?: { prevPageToken?: string; nextPageToken?: string } }> {
+  const { account, limit, pageToken } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  const queryParams: Record<string, string> = {};
+  if (limit) queryParams.recordCount = String(limit);
+  if (pageToken) queryParams.pageToken = pageToken;
+
+  const response = await platform.get(`${TM_API_BASE}/conversations`, queryParams);
+  const result = (await response.json()) as {
+    records?: RingCentralConversation[];
+    navigation?: { prevPageToken?: string; nextPageToken?: string };
+  };
+  return {
+    records: result.records ?? [],
+    navigation: result.navigation,
+  };
+}
+
+export async function getRingCentralConversation(params: {
+  account: ResolvedRingCentralAccount;
+  conversationId: string;
+}): Promise<RingCentralConversation | null> {
+  const { account, conversationId } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  try {
+    const response = await platform.get(`${TM_API_BASE}/conversations/${conversationId}`);
+    return (await response.json()) as RingCentralConversation;
+  } catch {
+    return null;
+  }
+}
+
+export async function createRingCentralConversation(params: {
+  account: ResolvedRingCentralAccount;
+  memberIds: string[];
+}): Promise<RingCentralConversation | null> {
+  const { account, memberIds } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  const body = {
+    members: memberIds.map((id) => ({ id })),
+  };
+
+  const response = await platform.post(`${TM_API_BASE}/conversations`, body);
+  return (await response.json()) as RingCentralConversation;
 }
 
 export async function getRingCentralUser(params: {
