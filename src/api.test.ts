@@ -341,6 +341,38 @@ describe("Notes API", () => {
   });
 });
 
+describe("Incoming Webhooks API", () => {
+  it("listRingCentralWebhooks should be exported", async () => {
+    const { listRingCentralWebhooks } = await import("./api.js");
+    expect(typeof listRingCentralWebhooks).toBe("function");
+  });
+
+  it("createRingCentralWebhook should be exported", async () => {
+    const { createRingCentralWebhook } = await import("./api.js");
+    expect(typeof createRingCentralWebhook).toBe("function");
+  });
+
+  it("getRingCentralWebhook should be exported", async () => {
+    const { getRingCentralWebhook } = await import("./api.js");
+    expect(typeof getRingCentralWebhook).toBe("function");
+  });
+
+  it("deleteRingCentralWebhook should be exported", async () => {
+    const { deleteRingCentralWebhook } = await import("./api.js");
+    expect(typeof deleteRingCentralWebhook).toBe("function");
+  });
+
+  it("activateRingCentralWebhook should be exported", async () => {
+    const { activateRingCentralWebhook } = await import("./api.js");
+    expect(typeof activateRingCentralWebhook).toBe("function");
+  });
+
+  it("suspendRingCentralWebhook should be exported", async () => {
+    const { suspendRingCentralWebhook } = await import("./api.js");
+    expect(typeof suspendRingCentralWebhook).toBe("function");
+  });
+});
+
 describe("probeRingCentral", () => {
   it("should be exported", async () => {
     const { probeRingCentral } = await import("./api.js");
