@@ -204,13 +204,13 @@ This plugin implements the following RingCentral Team Messaging APIs:
 | **Favorite Chats** | List, Add, Remove | `TeamMessaging` |
 | **Tasks** | List, Create, Get, Update, Delete, Complete | `TeamMessaging` |
 | **Calendar Events** | List, Create, Get, Update, Delete | `TeamMessaging` |
+| **Notes** | List, Create, Get, Update, Delete, Lock, Unlock, Publish | `TeamMessaging`, `Glip` |
 
 ### Not Yet Implemented
 
 | Category | APIs | Required Scopes |
 |----------|------|-----------------|
 | **Teams** | List, Create, Get, Update, Delete, Join, Leave, Add/Remove Members, Archive/Unarchive | `TeamMessaging` |
-| **Notes** | List, Create, Get, Update, Delete, Lock, Unlock, Publish | `TeamMessaging`, `Glip` |
 | **Incoming Webhooks** | List, Create, Get, Delete, Activate, Suspend | `TeamMessaging` |
 | **Compliance Exports** | List, Create, Get | `TeamMessaging` (admin) |
 

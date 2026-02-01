@@ -11,6 +11,7 @@ import type {
   RingCentralAdaptiveCard,
   RingCentralTask,
   RingCentralEvent,
+  RingCentralNote,
 } from "./types.js";
 
 // Team Messaging API endpoints
@@ -697,6 +698,116 @@ export async function deleteRingCentralEvent(params: {
   const { account, chatId, eventId } = params;
   const platform = await getRingCentralPlatform(account);
   await platform.delete(`${TM_API_BASE}/chats/${chatId}/events/${eventId}`);
+}
+
+// Notes API
+export async function listRingCentralNotes(params: {
+  account: ResolvedRingCentralAccount;
+  chatId: string;
+  status?: "Active" | "Draft";
+  limit?: number;
+  pageToken?: string;
+}): Promise<{ records: RingCentralNote[]; navigation?: { nextPageToken?: string } }> {
+  const { account, chatId, status, limit, pageToken } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  const queryParams: Record<string, string> = {};
+  if (status) queryParams.status = status;
+  if (limit) queryParams.recordCount = String(limit);
+  if (pageToken) queryParams.pageToken = pageToken;
+
+  const response = await platform.get(`${TM_API_BASE}/chats/${chatId}/notes`, queryParams);
+  const result = (await response.json()) as {
+    records?: RingCentralNote[];
+    navigation?: { prevPageToken?: string; nextPageToken?: string };
+  };
+  return {
+    records: result.records ?? [],
+    navigation: result.navigation,
+  };
+}
+
+export async function createRingCentralNote(params: {
+  account: ResolvedRingCentralAccount;
+  chatId: string;
+  title: string;
+  body?: string;
+}): Promise<RingCentralNote> {
+  const { account, chatId, title, body } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  const response = await platform.post(`${TM_API_BASE}/chats/${chatId}/notes`, { title, body });
+  return (await response.json()) as RingCentralNote;
+}
+
+export async function getRingCentralNote(params: {
+  account: ResolvedRingCentralAccount;
+  noteId: string;
+}): Promise<RingCentralNote | null> {
+  const { account, noteId } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  try {
+    const response = await platform.get(`${TM_API_BASE}/notes/${noteId}`);
+    return (await response.json()) as RingCentralNote;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateRingCentralNote(params: {
+  account: ResolvedRingCentralAccount;
+  noteId: string;
+  title?: string;
+  body?: string;
+}): Promise<RingCentralNote> {
+  const { account, noteId, title, body } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  const updateData: Record<string, unknown> = {};
+  if (title !== undefined) updateData.title = title;
+  if (body !== undefined) updateData.body = body;
+
+  const response = await platform.patch(`${TM_API_BASE}/notes/${noteId}`, updateData);
+  return (await response.json()) as RingCentralNote;
+}
+
+export async function deleteRingCentralNote(params: {
+  account: ResolvedRingCentralAccount;
+  noteId: string;
+}): Promise<void> {
+  const { account, noteId } = params;
+  const platform = await getRingCentralPlatform(account);
+  await platform.delete(`${TM_API_BASE}/notes/${noteId}`);
+}
+
+export async function lockRingCentralNote(params: {
+  account: ResolvedRingCentralAccount;
+  noteId: string;
+}): Promise<void> {
+  const { account, noteId } = params;
+  const platform = await getRingCentralPlatform(account);
+  await platform.post(`${TM_API_BASE}/notes/${noteId}/lock`, {});
+}
+
+export async function unlockRingCentralNote(params: {
+  account: ResolvedRingCentralAccount;
+  noteId: string;
+}): Promise<void> {
+  const { account, noteId } = params;
+  const platform = await getRingCentralPlatform(account);
+  await platform.post(`${TM_API_BASE}/notes/${noteId}/unlock`, {});
+}
+
+export async function publishRingCentralNote(params: {
+  account: ResolvedRingCentralAccount;
+  noteId: string;
+}): Promise<RingCentralNote> {
+  const { account, noteId } = params;
+  const platform = await getRingCentralPlatform(account);
+
+  const response = await platform.post(`${TM_API_BASE}/notes/${noteId}/publish`, {});
+  return (await response.json()) as RingCentralNote;
 }
 
 export async function probeRingCentral(

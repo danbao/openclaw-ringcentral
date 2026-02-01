@@ -299,6 +299,48 @@ describe("Calendar Events API", () => {
   });
 });
 
+describe("Notes API", () => {
+  it("listRingCentralNotes should be exported", async () => {
+    const { listRingCentralNotes } = await import("./api.js");
+    expect(typeof listRingCentralNotes).toBe("function");
+  });
+
+  it("createRingCentralNote should be exported", async () => {
+    const { createRingCentralNote } = await import("./api.js");
+    expect(typeof createRingCentralNote).toBe("function");
+  });
+
+  it("getRingCentralNote should be exported", async () => {
+    const { getRingCentralNote } = await import("./api.js");
+    expect(typeof getRingCentralNote).toBe("function");
+  });
+
+  it("updateRingCentralNote should be exported", async () => {
+    const { updateRingCentralNote } = await import("./api.js");
+    expect(typeof updateRingCentralNote).toBe("function");
+  });
+
+  it("deleteRingCentralNote should be exported", async () => {
+    const { deleteRingCentralNote } = await import("./api.js");
+    expect(typeof deleteRingCentralNote).toBe("function");
+  });
+
+  it("lockRingCentralNote should be exported", async () => {
+    const { lockRingCentralNote } = await import("./api.js");
+    expect(typeof lockRingCentralNote).toBe("function");
+  });
+
+  it("unlockRingCentralNote should be exported", async () => {
+    const { unlockRingCentralNote } = await import("./api.js");
+    expect(typeof unlockRingCentralNote).toBe("function");
+  });
+
+  it("publishRingCentralNote should be exported", async () => {
+    const { publishRingCentralNote } = await import("./api.js");
+    expect(typeof publishRingCentralNote).toBe("function");
+  });
+});
+
 describe("probeRingCentral", () => {
   it("should be exported", async () => {
     const { probeRingCentral } = await import("./api.js");

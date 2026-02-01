@@ -37,6 +37,19 @@ export type RingCentralConversation = {
   lastModifiedTime?: string;
 };
 
+export type RingCentralNote = {
+  id?: string;
+  chatId?: string;
+  creatorId?: string;
+  title?: string;
+  body?: string;
+  status?: "Active" | "Draft";
+  lockedBy?: { id?: string };
+  type?: "Note";
+  creationTime?: string;
+  lastModifiedTime?: string;
+};
+
 export type RingCentralEvent = {
   id?: string;
   chatId?: string;
