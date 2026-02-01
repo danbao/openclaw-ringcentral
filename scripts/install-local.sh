@@ -7,28 +7,87 @@ PLUGIN_NAME="openclaw-ringcentral"
 OPENCLAW_CONFIG="$HOME/.openclaw/openclaw.json"
 OPENCLAW_EXTENSIONS="$HOME/.openclaw/extensions"
 
+# Parse arguments
+USE_NPM=false
+NPM_VERSION=""
+
+print_usage() {
+    echo "Usage: $0 [options]"
+    echo ""
+    echo "Options:"
+    echo "  --npm [version]   Install from npm registry (default: latest)"
+    echo "  --local           Install from local tarball (default)"
+    echo "  -h, --help        Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $0                      # Install from local tarball"
+    echo "  $0 --local              # Install from local tarball"
+    echo "  $0 --npm                # Install latest from npm"
+    echo "  $0 --npm 2026.1.30      # Install specific version from npm"
+}
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --npm)
+            USE_NPM=true
+            if [[ -n "$2" && ! "$2" =~ ^- ]]; then
+                NPM_VERSION="$2"
+                shift
+            fi
+            shift
+            ;;
+        --local)
+            USE_NPM=false
+            shift
+            ;;
+        -h|--help)
+            print_usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            print_usage
+            exit 1
+            ;;
+    esac
+done
+
 cd "$PROJECT_DIR"
 
-# Get current version from package.json
-CURRENT_VERSION=$(node -p "require('./package.json').version")
-TARBALL="${PLUGIN_NAME}-${CURRENT_VERSION}.tgz"
+echo "=== Installing $PLUGIN_NAME ==="
 
-echo "=== Installing $PLUGIN_NAME locally ==="
-echo "Version: $CURRENT_VERSION"
-echo ""
+# Determine install source
+if [ "$USE_NPM" = true ]; then
+    if [ -n "$NPM_VERSION" ]; then
+        INSTALL_SOURCE="${PLUGIN_NAME}@${NPM_VERSION}"
+        echo "Source: npm registry (version: $NPM_VERSION)"
+    else
+        INSTALL_SOURCE="$PLUGIN_NAME"
+        echo "Source: npm registry (latest)"
+    fi
+else
+    # Get current version from package.json
+    CURRENT_VERSION=$(node -p "require('./package.json').version")
+    TARBALL="${PLUGIN_NAME}-${CURRENT_VERSION}.tgz"
+    
+    echo "Source: local tarball"
+    echo "Version: $CURRENT_VERSION"
+    
+    # Check if tarball exists, if not pack it
+    if [ ! -f "$TARBALL" ]; then
+        echo "Tarball not found, packing..."
+        pnpm pack
+    fi
 
-# Check if tarball exists, if not pack it
-if [ ! -f "$TARBALL" ]; then
-    echo "Tarball not found, packing..."
-    pnpm pack
+    if [ ! -f "$TARBALL" ]; then
+        echo "Error: Failed to create tarball"
+        exit 1
+    fi
+
+    INSTALL_SOURCE="$PROJECT_DIR/$TARBALL"
+    echo "Using tarball: $TARBALL"
 fi
 
-if [ ! -f "$TARBALL" ]; then
-    echo "Error: Failed to create tarball"
-    exit 1
-fi
-
-echo "Using tarball: $TARBALL"
 echo ""
 
 # Remove existing plugin installation
@@ -76,7 +135,7 @@ fi
 
 # Install plugin
 echo "Installing plugin..."
-openclaw plugins install "$PROJECT_DIR/$TARBALL"
+openclaw plugins install "$INSTALL_SOURCE"
 
 # Restore ringcentral channel config with credentials
 if [ -n "$CREDENTIALS_BACKUP" ] && [ "$CREDENTIALS_BACKUP" != "" ]; then
@@ -98,7 +157,15 @@ fi
 
 echo ""
 echo "=== Installation complete ==="
-echo "Installed: $PLUGIN_NAME@$CURRENT_VERSION"
+if [ "$USE_NPM" = true ]; then
+    if [ -n "$NPM_VERSION" ]; then
+        echo "Installed: $PLUGIN_NAME@$NPM_VERSION (from npm)"
+    else
+        echo "Installed: $PLUGIN_NAME@latest (from npm)"
+    fi
+else
+    echo "Installed: $PLUGIN_NAME@$CURRENT_VERSION (local)"
+fi
 echo ""
 echo "To load the new plugin, restart the gateway:"
 echo "  openclaw gateway restart"
