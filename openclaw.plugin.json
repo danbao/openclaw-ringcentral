@@ -7,6 +7,10 @@
     "enabled": {
       "label": "Enable RingCentral"
     },
+    "name": {
+      "label": "Account Name",
+      "placeholder": "My RingCentral Bot"
+    },
     "selfOnly": {
       "label": "Self Only Mode",
       "help": "When enabled, only respond to your own messages in Personal chat. Set to false to enable Team/Group chats."
@@ -19,7 +23,7 @@
       "label": "Allowed Teams",
       "help": "Add Team IDs to enable them. Get Team ID from the RingCentral URL: app.ringcentral.com/messages/{TEAM_ID}",
       "itemLabel": "Team ID",
-      "placeholder": "1541525766146"
+      "placeholder": "1234567890123"
     },
     "groups.*": {
       "label": "Team Configuration"
@@ -46,6 +50,11 @@
       "label": "Require @Mention (Global)",
       "help": "Default setting for all teams. When enabled, the bot only responds when @mentioned."
     },
+    "botExtensionId": {
+      "label": "Bot Extension ID",
+      "help": "Extension ID of the bot for @mention detection. Found in RingCentral admin portal.",
+      "placeholder": "123456789"
+    },
     "credentials": {
       "label": "API Credentials",
       "advanced": true
@@ -70,16 +79,18 @@
       "placeholder": "https://platform.ringcentral.com",
       "help": "Use https://platform.devtest.ringcentral.com for sandbox"
     },
-    "dmPolicy": {
-      "label": "DM Policy",
-      "help": "How to handle direct messages: disabled, allowlist, pairing, or open",
+    "dm": {
+      "label": "Direct Message Settings",
       "advanced": true
     },
-    "allowFrom": {
+    "dm.policy": {
+      "label": "DM Policy",
+      "help": "How to handle direct messages: disabled, allowlist, pairing, or open"
+    },
+    "dm.allowFrom": {
       "label": "DM Allowlist",
       "help": "User IDs allowed to send DMs",
-      "placeholder": "3218766020",
-      "advanced": true
+      "placeholder": "987654321"
     },
     "mediaMaxMb": {
       "label": "Max Media Size (MB)",
@@ -90,6 +101,26 @@
       "label": "Text Chunk Limit",
       "placeholder": "4000",
       "advanced": true
+    },
+    "chunkMode": {
+      "label": "Chunk Mode",
+      "help": "How to split long messages: length (by character count) or newline (by line breaks)",
+      "advanced": true
+    },
+    "blockStreaming": {
+      "label": "Block Streaming",
+      "help": "Use block-based streaming for long responses",
+      "advanced": true
+    },
+    "replyToMode": {
+      "label": "Reply To Mode",
+      "help": "off: don't use threading, all: reply to all messages in thread",
+      "advanced": true
+    },
+    "useAdaptiveCards": {
+      "label": "Use Adaptive Cards",
+      "help": "Format messages with code blocks as Adaptive Cards for better rendering",
+      "advanced": true
     }
   },
   "configSchema": {
@@ -99,6 +130,10 @@
       "enabled": {
         "type": "boolean",
         "description": "Enable the RingCentral channel"
+      },
+      "name": {
+        "type": "string",
+        "description": "Display name for this account"
       },
       "selfOnly": {
         "type": "boolean",
@@ -129,7 +164,7 @@
             "users": {
               "type": "array",
               "items": {
-                "type": "string"
+                "type": ["string", "number"]
               },
               "description": "Allowed user IDs in this team"
             }
@@ -140,6 +175,10 @@
       "requireMention": {
         "type": "boolean",
         "description": "Require @mention in group chats (global default)"
+      },
+      "botExtensionId": {
+        "type": "string",
+        "description": "Extension ID of the bot for @mention detection"
       },
       "credentials": {
         "type": "object",
@@ -159,15 +198,36 @@
           }
         }
       },
+      "dm": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "policy": {
+            "type": "string",
+            "enum": ["disabled", "allowlist", "pairing", "open"]
+          },
+          "allowFrom": {
+            "type": "array",
+            "items": {
+              "type": ["string", "number"]
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
       "dmPolicy": {
         "type": "string",
-        "enum": ["disabled", "allowlist", "pairing", "open"]
+        "enum": ["disabled", "allowlist", "pairing", "open"],
+        "description": "Deprecated: use dm.policy instead"
       },
       "allowFrom": {
         "type": "array",
         "items": {
           "type": ["string", "number"]
-        }
+        },
+        "description": "Deprecated: use dm.allowFrom instead"
       },
       "groupAllowFrom": {
         "type": "array",
@@ -177,23 +237,69 @@
       },
       "mediaMaxMb": {
         "type": "integer",
-        "minimum": 1
+        "minimum": 1,
+        "description": "Maximum media file size in MB (default: 20)"
       },
       "textChunkLimit": {
         "type": "integer",
-        "minimum": 1
+        "minimum": 1,
+        "description": "Maximum characters per message chunk (default: 4000)"
       },
-      "name": {
-        "type": "string"
+      "chunkMode": {
+        "type": "string",
+        "enum": ["length", "newline"],
+        "description": "How to split long messages"
+      },
+      "blockStreaming": {
+        "type": "boolean",
+        "description": "Use block-based streaming for responses"
+      },
+      "blockStreamingCoalesce": {
+        "type": "object",
+        "properties": {
+          "minChars": {
+            "type": "integer"
+          },
+          "idleMs": {
+            "type": "integer"
+          }
+        }
+      },
+      "replyToMode": {
+        "type": "string",
+        "enum": ["off", "all"],
+        "description": "Threading mode for replies"
+      },
+      "useAdaptiveCards": {
+        "type": "boolean",
+        "description": "Use Adaptive Cards for code block formatting"
+      },
+      "markdown": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "allowBots": {
+        "type": "boolean",
+        "description": "Allow messages from other bots"
+      },
+      "workspace": {
+        "type": "string",
+        "description": "Path to workspace for storing data"
       },
       "accounts": {
         "type": "object",
         "additionalProperties": {
           "type": "object"
-        }
+        },
+        "description": "Multiple account configurations"
       },
       "defaultAccount": {
-        "type": "string"
+        "type": "string",
+        "description": "Default account ID to use"
       }
     }
   }
