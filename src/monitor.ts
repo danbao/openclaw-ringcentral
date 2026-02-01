@@ -1089,7 +1089,7 @@ export async function startRingCentralMonitor(
 
       // Handle notifications
       subscription.on(subscription.events.notification, (event: unknown) => {
-        logger.debug(`WebSocket notification received: ${JSON.stringify(event).slice(0, 500)}`);
+        logger.debug(`WebSocket notification received: ${JSON.stringify(event)}`);
         const evt = event as RingCentralWebhookEvent;
         processWebSocketEvent({
           event: evt,
