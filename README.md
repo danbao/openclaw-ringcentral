@@ -10,6 +10,7 @@ RingCentral Team Messaging channel plugin for OpenClaw. Enables bidirectional me
 - Support for text messages and attachments
 - Typing indicators
 - Adaptive Cards support (create, read, update, delete)
+- **Message Actions** - Read, edit, delete messages and get chat info via agent tools
 
 ## Prerequisites
 
@@ -166,6 +167,66 @@ To enable the bot in group chats:
   }
 }
 ```
+
+## Message Actions
+
+The plugin supports message actions that allow the AI agent to read, edit, and delete messages in RingCentral chats.
+
+### Supported Actions
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
+| `read` | Fetch message history from a chat | `chatId`, `limit` (optional), `pageToken` (optional) |
+| `edit` | Edit an existing message | `chatId`, `messageId`, `message` |
+| `delete` | Delete a message | `chatId`, `messageId` |
+| `channel-info` | Get chat/channel information | `chatId` |
+
+### Configuration
+
+Message actions are enabled by default. To disable specific actions:
+
+```json
+{
+  "channels": {
+    "ringcentral": {
+      "actions": {
+        "messages": false,
+        "channelInfo": false
+      }
+    }
+  }
+}
+```
+
+### Usage Examples
+
+Ask the AI to read messages from a chat:
+
+```
+Read the last 10 messages from chat 123456789
+```
+
+Ask the AI to summarize a conversation:
+
+```
+Summarize the messages in chat 123456789
+```
+
+### Chat Name to ID Mapping
+
+RingCentral requires a numeric `chatId` for message actions. The agent can remember chat name to ID mappings:
+
+1. Tell the agent the chatId once:
+   ```
+   The Engineering Team chat ID is 123456789, please remember this
+   ```
+
+2. Then refer to it by name:
+   ```
+   Read messages from Engineering Team
+   ```
+
+The agent uses OpenClaw's memory system to store and retrieve these mappings.
 
 ## Troubleshooting
 
