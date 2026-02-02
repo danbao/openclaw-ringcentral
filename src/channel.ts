@@ -35,6 +35,7 @@ import {
   parseRingCentralTarget,
 } from "./targets.js";
 import type { RingCentralConfig } from "./types.js";
+import { ringcentralMessageActions } from "./actions-adapter.js";
 
 const formatAllowFromEntry = (entry: string) =>
   (entry ?? "")
@@ -78,6 +79,13 @@ export const ringcentralDock: ChannelDock = {
       currentThreadTs: undefined,
       hasRepliedRef,
     }),
+  },
+  agentPrompt: {
+    messageToolHints: () => [
+      "- RingCentral message actions require a numeric `chatId`. Use `action=read` to fetch message history, `action=edit` to edit, `action=delete` to delete, `action=channel-info` to get chat details.",
+      "- When user provides a chat name with its chatId (e.g., \"Engineering Team chatId is 123456789\"), save the mapping to memory so you can look it up later by name.",
+      "- Before asking user for chatId, use `memory_search` to check if you've previously stored a name→chatId mapping for the chat they mentioned.",
+    ],
   },
 };
 
@@ -543,4 +551,5 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
       };
     },
   },
+  actions: ringcentralMessageActions,
 };

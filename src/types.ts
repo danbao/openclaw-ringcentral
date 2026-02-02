@@ -240,6 +240,11 @@ export type RingCentralCredentials = {
   server?: string;
 };
 
+export type RingCentralActionsConfig = {
+  messages?: boolean;
+  channelInfo?: boolean;
+};
+
 export type RingCentralAccountConfig = {
   enabled?: boolean;
   name?: string;
@@ -263,6 +268,7 @@ export type RingCentralAccountConfig = {
   selfOnly?: boolean; // JWT mode: only accept messages from the JWT user in Personal chat (default: true)
   useAdaptiveCards?: boolean; // Use Adaptive Cards for messages with code blocks (default: false)
   workspace?: string; // Path to workspace for storing group chat messages
+  actions?: RingCentralActionsConfig; // Action permissions for message operations
 };
 
 export type RingCentralConfig = RingCentralAccountConfig & {

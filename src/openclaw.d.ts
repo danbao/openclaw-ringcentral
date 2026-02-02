@@ -155,6 +155,11 @@ declare module "openclaw/plugin-sdk" {
     [key: string]: unknown;
   };
 
+  // Channel Agent Prompt Adapter
+  export type ChannelAgentPromptAdapter = {
+    messageToolHints?: (params: { cfg: OpenClawConfig; accountId?: string | null }) => string[];
+  };
+
   // Channel Dock Type
   export type ChannelDock = {
     id: string;
@@ -179,6 +184,7 @@ declare module "openclaw/plugin-sdk" {
       resolveReplyToMode?: (opts: { cfg: OpenClawConfig }) => string;
       buildToolContext?: (opts: { context: Record<string, unknown>; hasRepliedRef: { current: boolean } }) => Record<string, unknown>;
     };
+    agentPrompt?: ChannelAgentPromptAdapter;
   };
 
   // Channel Plugin Types
@@ -313,6 +319,26 @@ declare module "openclaw/plugin-sdk" {
     startAccount: (ctx: GatewayContext<TAccount>) => Promise<() => void>;
   };
 
+  // Message Action Types
+  export type AgentToolResult<T = unknown> = {
+    content: Array<{ type: "text"; text: string }>;
+    isError?: boolean;
+  };
+
+  export type ChannelMessageActionContext = {
+    channel: string;
+    action: string;
+    cfg: OpenClawConfig;
+    params: Record<string, unknown>;
+    accountId?: string | null;
+  };
+
+  export type ChannelMessageActionAdapter = {
+    listActions?: (params: { cfg: OpenClawConfig }) => string[];
+    supportsAction?: (params: { action: string }) => boolean;
+    handleAction?: (ctx: ChannelMessageActionContext) => Promise<AgentToolResult<unknown>>;
+  };
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export type ChannelPlugin<TAccount = any> = {
     id: string;
@@ -337,6 +363,7 @@ declare module "openclaw/plugin-sdk" {
     outbound: ChannelPluginOutbound<TAccount>;
     status?: ChannelPluginStatus<TAccount>;
     gateway?: ChannelPluginGateway<TAccount>;
+    actions?: ChannelMessageActionAdapter;
   };
 
   // Constants
