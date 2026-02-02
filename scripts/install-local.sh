@@ -69,8 +69,11 @@ else
     # Get current version from package.json
     ORIGINAL_VERSION=$(node -p "require('./package.json').version")
 
-    # Extract major version (first number before the first dot)
-    MAJOR_VERSION=$(echo "$ORIGINAL_VERSION" | cut -d'.' -f1)
+    # Get current date in YYYY.M.D format (no leading zeros)
+    YEAR=$(date +%Y)
+    MONTH=$(date +%-m)
+    DAY=$(date +%-d)
+    DATE_VERSION="${YEAR}.${MONTH}.${DAY}"
 
     # Get Git commit ID (short format, 7 characters)
     if ! git rev-parse --git-dir > /dev/null 2>&1; then
@@ -79,8 +82,8 @@ else
     fi
     COMMIT_ID=$(git rev-parse --short=7 HEAD)
 
-    # Generate beta version: <major>.0.0-beta.<commitId>
-    BETA_VERSION="${MAJOR_VERSION}.0.0-beta.${COMMIT_ID}"
+    # Generate beta version: YYYY.M.D-beta.<commitId>
+    BETA_VERSION="${DATE_VERSION}-beta.${COMMIT_ID}"
     TARBALL="${PLUGIN_NAME}-${BETA_VERSION}.tgz"
 
     echo "Source: local tarball"
