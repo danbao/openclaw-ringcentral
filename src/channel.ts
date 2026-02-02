@@ -35,6 +35,7 @@ import {
   parseRingCentralTarget,
 } from "./targets.js";
 import type { RingCentralConfig } from "./types.js";
+import { ringcentralMessageActions } from "./actions-adapter.js";
 
 const formatAllowFromEntry = (entry: string) =>
   (entry ?? "")
@@ -543,4 +544,5 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
       };
     },
   },
+  actions: ringcentralMessageActions,
 };
