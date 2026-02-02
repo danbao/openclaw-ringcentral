@@ -451,12 +451,22 @@ async function processMessageWithPipeline(params: {
     ? (dmPeerFromMembers || (senderIdNorm !== ownerIdNorm ? senderIdNorm : ""))
     : "";
 
+  // Map RingCentral chat types to openclaw peerKind:
+  // - Personal/Direct -> "dm" (direct message)
+  // - Group -> "group" (small group chat, 3-16 people)
+  // - Team -> "channel" (named team chat, similar to Slack channel)
+  const peerKind: "dm" | "group" | "channel" = isGroup
+    ? chatType === "Team"
+      ? "channel"
+      : "group"
+    : "dm";
+
   const route = core.channel.routing.resolveAgentRoute({
     cfg: config,
     channel: "ringcentral",
     accountId: account.accountId,
     peer: {
-      kind: isGroup ? "group" : "dm",
+      kind: peerKind,
       id: isGroup ? chatId : (dmPeerUserId || chatId),
     },
   });
@@ -711,29 +721,22 @@ async function processMessageWithPipeline(params: {
     ? (chatName?.trim() ? chatName.trim() : `chat:${chatId}`)
     : `user:${senderId}`;
 
-  // Use chatId as the session key for all chat types (Personal, Direct, Group, Team).
-  // RingCentral uses chatId/groupId as the unique identifier for all conversations.
-  // Include chat type prefix to distinguish between different conversation types.
-  const chatTypePrefix = isPersonalChat
-    ? "personal"
-    : isDirectChat
-      ? "dm"
-      : chatType === "Team"
-        ? "team"
-        : "group";
-  const chatSessionKey = `${route.agentId}:ringcentral:${chatTypePrefix}:${chatId}`;
-
+  // Use openclaw's standard session key format via resolveAgentRoute().
+  // Session key format: agent:{agentId}:{channel}:{peerKind}:{peerId}
+  // - Group: agent:main:ringcentral:group:{chatId}
+  // - Team: agent:main:ringcentral:channel:{chatId}
+  // - DM: agent:main:ringcentral:dm:{peerId} (or main session based on dmScope config)
   const ctxPayload = core.channel.reply.finalizeInboundContext({
     Body: body,
     RawBody: rawBody,
     CommandBody: rawBody,
     // IMPORTANT:
     // OpenClaw derives group metadata from ctx.From / ctx.To for group/channel chats.
-    From: isGroup ? `ringcentral:group:${chatId}` : `ringcentral:${senderId}`,
+    From: isGroup ? `ringcentral:${peerKind}:${chatId}` : `ringcentral:${senderId}`,
     // IMPORTANT: use provider/group-prefixed To for group chats so OpenClaw can infer
     // group delivery context and session type correctly.
-    To: isGroup ? `ringcentral:group:${chatId}` : `ringcentral:${chatId}`,
-    SessionKey: chatSessionKey,
+    To: isGroup ? `ringcentral:${peerKind}:${chatId}` : `ringcentral:${chatId}`,
+    SessionKey: route.sessionKey,
     AccountId: route.accountId,
     ChatType: isGroup ? "channel" : "direct",
     ConversationLabel: conversationLabel,
