@@ -56,8 +56,9 @@ const MESSAGE_ID_TTL = 60000; // 60 seconds
 // Reconnection settings
 const RECONNECT_INITIAL_DELAY = 5000; // 5 seconds (increased to avoid 429)
 const RECONNECT_MAX_DELAY = 300000; // 5 minutes (increased for rate limiting)
-const RECONNECT_MAX_ATTEMPTS = 5; // Reduced attempts
+const RECONNECT_MAX_ATTEMPTS = 10; // Increased for long-term resilience
 const RATE_LIMIT_BACKOFF = 60000; // 1 minute backoff on 429
+const WS_HEALTH_CHECK_INTERVAL = 60000; // Check WebSocket health every 60 seconds
 
 // WebSocket singleton per account to avoid hammering /oauth/wstoken.
 // @ringcentral/subscriptions + @rc-ex/ws can swallow initial connect errors and
@@ -1123,6 +1124,37 @@ export async function startRingCentralMonitor(
       
       logger.info(`[${account.accountId}] RingCentral WebSocket subscription established`);
       reconnectAttempts = 0; // Reset on success
+
+      // Setup WebSocket close/error handlers for auto-reconnect
+      const ws = mgr.wsExt.ws;
+      if (ws) {
+        const handleWsClose = (event: { code?: number; reason?: string } | Event) => {
+          if (isShuttingDown || abortSignal.aborted) return;
+          const closeEvent = event as { code?: number; reason?: string };
+          logger.warn(
+            `[${account.accountId}] WebSocket closed unexpectedly. ` +
+              `code=${closeEvent.code ?? "unknown"} reason=${closeEvent.reason ?? "none"}. ` +
+              `Scheduling reconnect...`,
+          );
+          // Clear WsManager cache to force fresh connection
+          wsManagers.delete(account.accountId);
+          scheduleReconnect();
+        };
+
+        const handleWsError = (event: unknown) => {
+          if (isShuttingDown || abortSignal.aborted) return;
+          const errEvent = event as { message?: string };
+          const errMsg = errEvent?.message ?? "WebSocket error";
+          logger.error(`[${account.accountId}] WebSocket error: ${errMsg}`);
+          // Error usually followed by close, so we don't reconnect here directly
+        };
+
+        ws.addEventListener("close", handleWsClose);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (ws as any).addEventListener("error", handleWsError);
+
+        logger.debug(`[${account.accountId}] WebSocket close/error handlers registered`);
+      }
 
     } catch (err) {
       const e = err as any;
