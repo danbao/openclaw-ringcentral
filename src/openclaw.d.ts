@@ -155,6 +155,11 @@ declare module "openclaw/plugin-sdk" {
     [key: string]: unknown;
   };
 
+  // Channel Agent Prompt Adapter
+  export type ChannelAgentPromptAdapter = {
+    messageToolHints?: (params: { cfg: OpenClawConfig; accountId?: string | null }) => string[];
+  };
+
   // Channel Dock Type
   export type ChannelDock = {
     id: string;
@@ -179,6 +184,7 @@ declare module "openclaw/plugin-sdk" {
       resolveReplyToMode?: (opts: { cfg: OpenClawConfig }) => string;
       buildToolContext?: (opts: { context: Record<string, unknown>; hasRepliedRef: { current: boolean } }) => Record<string, unknown>;
     };
+    agentPrompt?: ChannelAgentPromptAdapter;
   };
 
   // Channel Plugin Types
