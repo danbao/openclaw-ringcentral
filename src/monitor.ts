@@ -711,11 +711,17 @@ async function processMessageWithPipeline(params: {
     ? (chatName?.trim() ? chatName.trim() : `chat:${chatId}`)
     : `user:${senderId}`;
 
-  // Force DM session isolation: use peer userId as the stable session key component.
-  // This avoids merging all DMs into the default `agent:main:main` session.
-  const dmSessionKey = !isGroup && dmPeerUserId
-    ? `${route.agentId}:ringcentral:dm:${dmPeerUserId}`
-    : route.sessionKey;
+  // Use chatId as the session key for all chat types (Personal, Direct, Group, Team).
+  // RingCentral uses chatId/groupId as the unique identifier for all conversations.
+  // Include chat type prefix to distinguish between different conversation types.
+  const chatTypePrefix = isPersonalChat
+    ? "personal"
+    : isDirectChat
+      ? "dm"
+      : chatType === "Team"
+        ? "team"
+        : "group";
+  const chatSessionKey = `${route.agentId}:ringcentral:${chatTypePrefix}:${chatId}`;
 
   const ctxPayload = core.channel.reply.finalizeInboundContext({
     Body: body,
@@ -727,7 +733,7 @@ async function processMessageWithPipeline(params: {
     // IMPORTANT: use provider/group-prefixed To for group chats so OpenClaw can infer
     // group delivery context and session type correctly.
     To: isGroup ? `ringcentral:group:${chatId}` : `ringcentral:${chatId}`,
-    SessionKey: dmSessionKey,
+    SessionKey: chatSessionKey,
     AccountId: route.accountId,
     ChatType: isGroup ? "channel" : "direct",
     ConversationLabel: conversationLabel,
