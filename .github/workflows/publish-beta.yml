@@ -39,16 +39,31 @@ jobs:
           echo "version=$BETA_VERSION" >> $GITHUB_OUTPUT
           echo "Beta version: $BETA_VERSION"
 
-      - name: Update package.json version
+      - name: Update package.json for GitHub Packages
         run: |
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+            // Update version
             pkg.version = '${{ steps.version.outputs.version }}';
+            // GitHub Packages requires scoped package name
+            pkg.name = '@${{ github.repository_owner }}/openclaw-ringcentral';
+            // Ensure publishConfig points to GitHub Packages
+            pkg.publishConfig = {
+              registry: 'https://npm.pkg.github.com'
+            };
+            // Update repository URL to match
+            pkg.repository = {
+              type: 'git',
+              url: 'https://github.com/${{ github.repository }}.git'
+            };
             fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
+            console.log('Updated package.json:');
+            console.log('  name:', pkg.name);
+            console.log('  version:', pkg.version);
           "
 
       - name: Publish to GitHub Packages
-        run: pnpm publish --no-git-checks --access public
+        run: pnpm publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

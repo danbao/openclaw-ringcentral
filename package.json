@@ -5,9 +5,6 @@
   "main": "index.ts",
   "description": "OpenClaw RingCentral Team Messaging channel plugin",
   "license": "MIT",
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
-  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
