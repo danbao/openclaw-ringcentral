@@ -362,6 +362,7 @@ declare module "openclaw/plugin-sdk" {
 
   export type ChannelPluginGateway<TAccount> = {
     startAccount: (ctx: GatewayContext<TAccount>) => Promise<() => void>;
+    logoutAccount?: (opts: { cfg: OpenClawConfig; accountId: string }) => Promise<OpenClawConfig>;
   };
 
   // Message Action Types
