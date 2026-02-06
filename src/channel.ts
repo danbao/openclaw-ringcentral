@@ -104,6 +104,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
     docsLabel: "ringcentral",
     blurb: "RingCentral Team Messaging via REST API and WebSocket.",
     order: 56,
+    quickstartAllowFrom: true,
   },
   onboarding: ringcentralOnboarding,
   pairing: {
