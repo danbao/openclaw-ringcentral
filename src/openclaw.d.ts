@@ -322,12 +322,26 @@ declare module "openclaw/plugin-sdk" {
     fix?: string;
   };
 
+  export type AccountAuditResult = {
+    ok: boolean;
+    checkedGroups: number;
+    groups: Array<{
+      id: string;
+      ok: boolean;
+      name?: string;
+      type?: string;
+      error?: string;
+    }>;
+    elapsedMs: number;
+  };
+
   export type ChannelPluginStatus<TAccount> = {
     defaultRuntime: Record<string, unknown>;
     collectStatusIssues: (accounts: Array<Record<string, unknown>>) => StatusIssue[];
     buildChannelSummary: (opts: { snapshot: Record<string, unknown> }) => Record<string, unknown>;
     probeAccount: (opts: { account: TAccount }) => Promise<{ ok: boolean; error?: string; elapsedMs: number }>;
-    buildAccountSnapshot: (opts: { account: TAccount; runtime?: Record<string, unknown>; probe?: Record<string, unknown> }) => Record<string, unknown>;
+    auditAccount?: (opts: { account: TAccount; cfg: OpenClawConfig; timeoutMs?: number; probe?: Record<string, unknown> }) => Promise<AccountAuditResult | undefined>;
+    buildAccountSnapshot: (opts: { account: TAccount; runtime?: Record<string, unknown>; probe?: Record<string, unknown>; audit?: AccountAuditResult }) => Record<string, unknown>;
   };
 
   export type GatewayContext<TAccount> = {
