@@ -47,10 +47,10 @@ const formatAllowFromEntry = (entry: string) =>
 export const ringcentralDock: ChannelDock = {
   id: "ringcentral",
   capabilities: {
-    chatTypes: ["direct", "group", "thread"],
+    chatTypes: ["direct", "group", "channel"],
     reactions: false,
     media: true,
-    threads: false,
+    threads: true,
     blockStreaming: true,
   },
   outbound: { textChunkLimit: 4000 },
@@ -121,9 +121,9 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
     },
   },
   capabilities: {
-    chatTypes: ["direct", "group"],
+    chatTypes: ["direct", "group", "channel"],
     reactions: false,
-    threads: false,
+    threads: true,
     media: true,
     nativeCommands: false,
     blockStreaming: true,
