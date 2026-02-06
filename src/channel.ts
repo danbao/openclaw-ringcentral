@@ -28,6 +28,7 @@ import {
   sendRingCentralMessage,
   uploadRingCentralAttachment,
   probeRingCentral,
+  listRingCentralChats,
 } from "./api.js";
 import { getRingCentralRuntime } from "./runtime.js";
 import { startRingCentralMonitor } from "./monitor.js";
@@ -290,6 +291,58 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
         .slice(0, limit && limit > 0 ? limit : undefined)
         .map((id) => ({ kind: "group", id }) as const);
       return entries;
+    },
+    listPeersLive: async ({ cfg, accountId, query, limit }) => {
+      const account = resolveRingCentralAccount({
+        cfg: cfg as OpenClawConfig,
+        accountId,
+      });
+      if (account.credentialSource === "none") return [];
+
+      try {
+        const chats = await listRingCentralChats({
+          account,
+          type: ["Direct", "Personal"],
+          limit: limit ?? 50,
+        });
+
+        const q = query?.trim().toLowerCase() || "";
+        return chats
+          .filter((chat) => !q || chat.name?.toLowerCase().includes(q) || chat.id?.includes(q))
+          .map((chat) => ({
+            kind: "user" as const,
+            id: chat.id ?? "",
+            name: chat.name,
+          }));
+      } catch {
+        return [];
+      }
+    },
+    listGroupsLive: async ({ cfg, accountId, query, limit }) => {
+      const account = resolveRingCentralAccount({
+        cfg: cfg as OpenClawConfig,
+        accountId,
+      });
+      if (account.credentialSource === "none") return [];
+
+      try {
+        const chats = await listRingCentralChats({
+          account,
+          type: ["Team", "Group"],
+          limit: limit ?? 50,
+        });
+
+        const q = query?.trim().toLowerCase() || "";
+        return chats
+          .filter((chat) => !q || chat.name?.toLowerCase().includes(q) || chat.id?.includes(q))
+          .map((chat) => ({
+            kind: "group" as const,
+            id: chat.id ?? "",
+            name: chat.name,
+          }));
+      } catch {
+        return [];
+      }
     },
   },
   resolver: {

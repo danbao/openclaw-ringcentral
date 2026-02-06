@@ -274,13 +274,15 @@ declare module "openclaw/plugin-sdk" {
     };
   };
 
-  export type DirectoryPeer = { kind: "user"; id: string };
-  export type DirectoryGroup = { kind: "group"; id: string };
+  export type DirectoryPeer = { kind: "user"; id: string; name?: string };
+  export type DirectoryGroup = { kind: "group"; id: string; name?: string };
 
   export type ChannelPluginDirectory<TAccount> = {
     self: (opts: { account: TAccount }) => Promise<{ id: string; name?: string } | null>;
     listPeers: (opts: { cfg: OpenClawConfig; accountId: string; query?: string; limit?: number }) => Promise<DirectoryPeer[]>;
     listGroups: (opts: { cfg: OpenClawConfig; accountId: string; query?: string; limit?: number }) => Promise<DirectoryGroup[]>;
+    listPeersLive?: (opts: { cfg: OpenClawConfig; accountId: string; query?: string; limit?: number }) => Promise<DirectoryPeer[]>;
+    listGroupsLive?: (opts: { cfg: OpenClawConfig; accountId: string; query?: string; limit?: number }) => Promise<DirectoryGroup[]>;
   };
 
   export type ResolvedTarget = { input: string; resolved: boolean; id?: string; note?: string };
