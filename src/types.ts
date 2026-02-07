@@ -249,6 +249,9 @@ export type RingCentralCredentials = {
 export type RingCentralActionsConfig = {
   messages?: boolean;
   channelInfo?: boolean;
+  tasks?: boolean;
+  events?: boolean;
+  notes?: boolean;
 };
 
 export type RingCentralAccountConfig = {
