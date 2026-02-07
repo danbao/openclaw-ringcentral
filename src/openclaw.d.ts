@@ -196,6 +196,7 @@ declare module "openclaw/plugin-sdk" {
     docsLabel?: string;
     blurb?: string;
     order?: number;
+    quickstartAllowFrom?: boolean;
   };
 
   export type ChannelPluginCapabilities = {
@@ -262,8 +263,15 @@ declare module "openclaw/plugin-sdk" {
     stripPatterns: (opts?: { ctx?: Record<string, unknown> }) => string[];
   };
 
+  export type ThreadingToolContext = {
+    currentChannelId?: string;
+    currentThreadTs?: string;
+    hasRepliedRef: { current: boolean };
+  };
+
   export type ChannelPluginThreading = {
     resolveReplyToMode: (opts: { cfg: OpenClawConfig }) => string;
+    buildToolContext?: (opts: { context: Record<string, unknown>; hasRepliedRef: { current: boolean } }) => ThreadingToolContext;
   };
 
   export type ChannelPluginMessaging = {
@@ -355,6 +363,7 @@ declare module "openclaw/plugin-sdk" {
 
   export type ChannelPluginGateway<TAccount> = {
     startAccount: (ctx: GatewayContext<TAccount>) => Promise<() => void>;
+    logoutAccount?: (opts: { cfg: OpenClawConfig; accountId: string }) => Promise<OpenClawConfig>;
   };
 
   // Message Action Types

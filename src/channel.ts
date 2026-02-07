@@ -104,6 +104,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
     docsLabel: "ringcentral",
     blurb: "RingCentral Team Messaging via REST API and WebSocket.",
     order: 56,
+    quickstartAllowFrom: true,
   },
   onboarding: ringcentralOnboarding,
   pairing: {
@@ -246,6 +247,11 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
   threading: {
     resolveReplyToMode: ({ cfg }) =>
       (cfg.channels?.ringcentral as RingCentralConfig | undefined)?.replyToMode ?? "off",
+    buildToolContext: ({ context, hasRepliedRef }) => ({
+      currentChannelId: (context.To as string | undefined)?.trim() || undefined,
+      currentThreadTs: (context.ReplyToId as string | undefined) || undefined,
+      hasRepliedRef,
+    }),
   },
   messaging: {
     normalizeTarget: normalizeRingCentralTarget,
@@ -669,6 +675,14 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
           lastStopAt: Date.now(),
         });
       };
+    },
+    logoutAccount: async ({ cfg, accountId }) => {
+      // Note: RingCentral SDK instances are managed per-session via wsManagers cache
+      // in monitor.ts. The cache is keyed by account credentials, so changing
+      // credentials will automatically create new connections.
+      // This function primarily returns the config unchanged as credentials
+      // remain in the config file for manual removal if desired.
+      return cfg;
     },
   },
   actions: ringcentralMessageActions,
