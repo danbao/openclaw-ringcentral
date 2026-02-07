@@ -196,6 +196,7 @@ declare module "openclaw/plugin-sdk" {
     docsLabel?: string;
     blurb?: string;
     order?: number;
+    quickstartAllowFrom?: boolean;
   };
 
   export type ChannelPluginCapabilities = {
