@@ -11,6 +11,13 @@ import {
   createRingCentralTaskAction,
   completeRingCentralTaskAction,
   updateRingCentralTaskAction,
+  listRingCentralEventsAction,
+  createRingCentralEventAction,
+  updateRingCentralEventAction,
+  deleteRingCentralEventAction,
+  listRingCentralNotesAction,
+  createRingCentralNoteAction,
+  updateRingCentralNoteAction,
 } from "./actions.js";
 import { normalizeRingCentralTarget } from "./targets.js";
 import type { RingCentralActionsConfig } from "./types.js";
@@ -25,7 +32,14 @@ type RingCentralActionName =
   | "list-tasks"
   | "create-task"
   | "complete-task"
-  | "update-task";
+  | "update-task"
+  | "list-events"
+  | "create-event"
+  | "update-event"
+  | "delete-event"
+  | "list-notes"
+  | "create-note"
+  | "update-note";
 
 type ChannelMessageActionContext = {
   channel: string;
@@ -145,6 +159,19 @@ export const ringcentralMessageActions: RingCentralMessageActionAdapter = {
       actions.add("update-task");
     }
 
+    if (isActionEnabled("events")) {
+      actions.add("list-events");
+      actions.add("create-event");
+      actions.add("update-event");
+      actions.add("delete-event");
+    }
+
+    if (isActionEnabled("notes")) {
+      actions.add("list-notes");
+      actions.add("create-note");
+      actions.add("update-note");
+    }
+
     return Array.from(actions);
   },
 
@@ -159,6 +186,13 @@ export const ringcentralMessageActions: RingCentralMessageActionAdapter = {
       "create-task",
       "complete-task",
       "update-task",
+      "list-events",
+      "create-event",
+      "update-event",
+      "delete-event",
+      "list-notes",
+      "create-note",
+      "update-note",
     ]);
     return supportedActions.has(action);
   },
@@ -363,6 +397,197 @@ export const ringcentralMessageActions: RingCentralMessageActionAdapter = {
           status: "ok",
           taskId: result.taskId,
           chatId,
+        });
+      }
+
+      // Event Actions
+      if (action === "list-events") {
+        const chatId = resolveChannelId(params);
+        const limit = readNumberParam(params, "limit", { integer: true });
+
+        const result = await listRingCentralEventsAction(chatId, {
+          cfg,
+          accountId: accountId ?? undefined,
+          limit,
+        });
+
+        return jsonResult({
+          status: "ok",
+          chatId,
+          events: result.events,
+          hasMore: result.hasMore,
+        });
+      }
+
+      if (action === "create-event") {
+        const chatId = resolveChannelId(params);
+        const title = readStringParam(params, "title", { required: true });
+        const startTime = readStringParam(params, "startTime", { required: true });
+        const endTime = readStringParam(params, "endTime", { required: true });
+        if (!title || !startTime || !endTime) {
+          return errorResult("title, startTime, and endTime are required");
+        }
+        const allDay = params.allDay === true;
+        const location = readStringParam(params, "location");
+        const description = readStringParam(params, "description");
+        const color = readStringParam(params, "color") as
+          | "Black"
+          | "Red"
+          | "Orange"
+          | "Yellow"
+          | "Green"
+          | "Blue"
+          | "Purple"
+          | "Magenta"
+          | undefined;
+        const recurrence = readStringParam(params, "recurrence") as
+          | "None"
+          | "Day"
+          | "Weekday"
+          | "Week"
+          | "Month"
+          | "Year"
+          | undefined;
+
+        const result = await createRingCentralEventAction(chatId, title, startTime, endTime, {
+          cfg,
+          accountId: accountId ?? undefined,
+          allDay,
+          location,
+          description,
+          color,
+          recurrence,
+        });
+
+        return jsonResult({
+          status: "ok",
+          eventId: result.eventId,
+          chatId,
+        });
+      }
+
+      if (action === "update-event") {
+        const chatId = resolveChannelId(params);
+        const eventId = readStringParam(params, "eventId", { required: true });
+        if (!eventId) {
+          return errorResult("eventId is required");
+        }
+        const title = readStringParam(params, "title");
+        const startTime = readStringParam(params, "startTime");
+        const endTime = readStringParam(params, "endTime");
+        const allDay = typeof params.allDay === "boolean" ? params.allDay : undefined;
+        const location = readStringParam(params, "location");
+        const description = readStringParam(params, "description");
+        const color = readStringParam(params, "color") as
+          | "Black"
+          | "Red"
+          | "Orange"
+          | "Yellow"
+          | "Green"
+          | "Blue"
+          | "Purple"
+          | "Magenta"
+          | undefined;
+
+        const result = await updateRingCentralEventAction(chatId, eventId, {
+          cfg,
+          accountId: accountId ?? undefined,
+          title,
+          startTime,
+          endTime,
+          allDay,
+          location,
+          description,
+          color,
+        });
+
+        return jsonResult({
+          status: "ok",
+          eventId: result.eventId,
+          chatId,
+        });
+      }
+
+      if (action === "delete-event") {
+        const chatId = resolveChannelId(params);
+        const eventId = readStringParam(params, "eventId", { required: true });
+        if (!eventId) {
+          return errorResult("eventId is required");
+        }
+
+        await deleteRingCentralEventAction(chatId, eventId, {
+          cfg,
+          accountId: accountId ?? undefined,
+        });
+
+        return jsonResult({
+          status: "ok",
+          deleted: true,
+          chatId,
+          eventId,
+        });
+      }
+
+      // Note Actions
+      if (action === "list-notes") {
+        const chatId = resolveChannelId(params);
+        const limit = readNumberParam(params, "limit", { integer: true });
+        const status = readStringParam(params, "status") as "Active" | "Draft" | undefined;
+
+        const result = await listRingCentralNotesAction(chatId, {
+          cfg,
+          accountId: accountId ?? undefined,
+          limit,
+          status,
+        });
+
+        return jsonResult({
+          status: "ok",
+          chatId,
+          notes: result.notes,
+          hasMore: result.hasMore,
+        });
+      }
+
+      if (action === "create-note") {
+        const chatId = resolveChannelId(params);
+        const title = readStringParam(params, "title", { required: true });
+        if (!title) {
+          return errorResult("title is required");
+        }
+        const body = readStringParam(params, "body");
+
+        const result = await createRingCentralNoteAction(chatId, title, {
+          cfg,
+          accountId: accountId ?? undefined,
+          body,
+        });
+
+        return jsonResult({
+          status: "ok",
+          noteId: result.noteId,
+          chatId,
+        });
+      }
+
+      if (action === "update-note") {
+        const noteId = readStringParam(params, "noteId", { required: true });
+        if (!noteId) {
+          return errorResult("noteId is required");
+        }
+        const title = readStringParam(params, "title");
+        const body = readStringParam(params, "body");
+
+        const result = await updateRingCentralNoteAction(noteId, {
+          cfg,
+          accountId: accountId ?? undefined,
+          title,
+          body,
+        });
+
+        return jsonResult({
+          status: "ok",
+          noteId: result.noteId,
         });
       }
 
