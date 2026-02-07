@@ -1271,3 +1271,42 @@ export async function startRingCentralMonitor(
 
   return cleanup;
 }
+
+/**
+ * Clear cached WebSocket manager for a specific account.
+ * This should be called when logging out an account to ensure
+ * fresh connections are created on next login.
+ *
+ * @param accountId - The account ID to clear from cache
+ * @returns true if a cached manager was found and removed, false otherwise
+ */
+export function clearRingCentralWsManager(accountId: string): boolean {
+  const manager = wsManagers.get(accountId);
+  if (!manager) {
+    return false;
+  }
+
+  // Attempt to close the WebSocket connection gracefully
+  try {
+    const ws = manager.wsExt?.ws;
+    if (ws && typeof ws.close === "function") {
+      ws.close();
+    }
+  } catch {
+    // Ignore errors during cleanup
+  }
+
+  // Remove from cache
+  wsManagers.delete(accountId);
+  return true;
+}
+
+/**
+ * Clear all cached WebSocket managers.
+ * Useful for complete cleanup during shutdown.
+ */
+export function clearAllRingCentralWsManagers(): void {
+  for (const [accountId] of wsManagers) {
+    clearRingCentralWsManager(accountId);
+  }
+}

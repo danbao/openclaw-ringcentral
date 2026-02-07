@@ -9,9 +9,11 @@ import {
   normalizeAccountId,
   PAIRING_APPROVED_MESSAGE,
   resolveChannelMediaMaxBytes,
+  resolveChannelGroupToolsPolicy,
   setAccountEnabledInConfigSection,
   type ChannelDock,
   type ChannelPlugin,
+  type GroupToolPolicyConfig,
   type OpenClawConfig,
 } from "openclaw/plugin-sdk";
 
@@ -26,9 +28,11 @@ import {
   sendRingCentralMessage,
   uploadRingCentralAttachment,
   probeRingCentral,
+  listRingCentralChats,
+  getRingCentralChat,
 } from "./api.js";
 import { getRingCentralRuntime } from "./runtime.js";
-import { startRingCentralMonitor } from "./monitor.js";
+import { startRingCentralMonitor, clearRingCentralWsManager } from "./monitor.js";
 import {
   normalizeRingCentralTarget,
   isRingCentralChatTarget,
@@ -36,6 +40,7 @@ import {
 } from "./targets.js";
 import type { RingCentralConfig } from "./types.js";
 import { ringcentralMessageActions } from "./actions-adapter.js";
+import { ringcentralOnboarding } from "./onboarding.js";
 
 const formatAllowFromEntry = (entry: string) =>
   (entry ?? "")
@@ -47,10 +52,10 @@ const formatAllowFromEntry = (entry: string) =>
 export const ringcentralDock: ChannelDock = {
   id: "ringcentral",
   capabilities: {
-    chatTypes: ["direct", "group", "thread"],
+    chatTypes: ["direct", "group", "channel"],
     reactions: false,
     media: true,
-    threads: false,
+    threads: true,
     blockStreaming: true,
   },
   outbound: { textChunkLimit: 4000 },
@@ -99,7 +104,9 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
     docsLabel: "ringcentral",
     blurb: "RingCentral Team Messaging via REST API and WebSocket.",
     order: 56,
+    quickstartAllowFrom: true,
   },
+  onboarding: ringcentralOnboarding,
   pairing: {
     idLabel: "ringcentralUserId",
     normalizeAllowEntry: (entry) => formatAllowFromEntry(entry),
@@ -121,9 +128,9 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
     },
   },
   capabilities: {
-    chatTypes: ["direct", "group"],
+    chatTypes: ["direct", "group", "channel"],
     reactions: false,
-    threads: false,
+    threads: true,
     media: true,
     nativeCommands: false,
     blockStreaming: true,
@@ -216,10 +223,37 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
       const account = resolveRingCentralAccount({ cfg: cfg as OpenClawConfig, accountId });
       return account.config.requireMention ?? true;
     },
+    resolveToolPolicy: (params): GroupToolPolicyConfig | undefined => {
+      return resolveChannelGroupToolsPolicy({
+        cfg: params.cfg as OpenClawConfig,
+        channel: "ringcentral",
+        groupId: params.groupId,
+        accountId: params.accountId,
+        senderId: params.senderId,
+        senderName: params.senderName,
+        senderUsername: params.senderUsername,
+        senderE164: params.senderE164,
+      });
+    },
+  },
+  mentions: {
+    stripPatterns: () => [
+      // RingCentral markdown mention pattern: ![:Person](123456)
+      "!\\[:Person\\]\\(\\d+\\)",
+      // Display format: @FirstName or @FirstName LastName
+      // Uses (?:^|[^\\w@.]) to avoid matching email addresses like user@example.com
+      // The pattern requires @ to be preceded by start of string, whitespace, or non-word char
+      "(?:^|[^\\w@.])@[A-Za-z]+(?:\\s+[A-Za-z]+)?",
+    ],
   },
   threading: {
     resolveReplyToMode: ({ cfg }) =>
       (cfg.channels?.ringcentral as RingCentralConfig | undefined)?.replyToMode ?? "off",
+    buildToolContext: ({ context, hasRepliedRef }) => ({
+      currentChannelId: (context.To as string | undefined)?.trim() || undefined,
+      currentThreadTs: (context.ReplyToId as string | undefined) || undefined,
+      hasRepliedRef,
+    }),
   },
   messaging: {
     normalizeTarget: normalizeRingCentralTarget,
@@ -266,6 +300,58 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
         .slice(0, limit && limit > 0 ? limit : undefined)
         .map((id) => ({ kind: "group", id }) as const);
       return entries;
+    },
+    listPeersLive: async ({ cfg, accountId, query, limit }) => {
+      const account = resolveRingCentralAccount({
+        cfg: cfg as OpenClawConfig,
+        accountId,
+      });
+      if (account.credentialSource === "none") return [];
+
+      try {
+        const chats = await listRingCentralChats({
+          account,
+          type: ["Direct", "Personal"],
+          limit: limit ?? 50,
+        });
+
+        const q = query?.trim().toLowerCase() || "";
+        return chats
+          .filter((chat) => !q || chat.name?.toLowerCase().includes(q) || chat.id?.includes(q))
+          .map((chat) => ({
+            kind: "user" as const,
+            id: chat.id ?? "",
+            name: chat.name,
+          }));
+      } catch {
+        return [];
+      }
+    },
+    listGroupsLive: async ({ cfg, accountId, query, limit }) => {
+      const account = resolveRingCentralAccount({
+        cfg: cfg as OpenClawConfig,
+        accountId,
+      });
+      if (account.credentialSource === "none") return [];
+
+      try {
+        const chats = await listRingCentralChats({
+          account,
+          type: ["Team", "Group"],
+          limit: limit ?? 50,
+        });
+
+        const q = query?.trim().toLowerCase() || "";
+        return chats
+          .filter((chat) => !q || chat.name?.toLowerCase().includes(q) || chat.id?.includes(q))
+          .map((chat) => ({
+            kind: "group" as const,
+            id: chat.id ?? "",
+            name: chat.name,
+          }));
+      } catch {
+        return [];
+      }
     },
   },
   resolver: {
@@ -506,7 +592,69 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
       lastProbeAt: snapshot.lastProbeAt ?? null,
     }),
     probeAccount: async ({ account }) => probeRingCentral(account),
-    buildAccountSnapshot: ({ account, runtime, probe }) => ({
+    auditAccount: async ({ account, cfg, timeoutMs }) => {
+      const groups = account.config.groups ?? {};
+      const groupIds = Object.keys(groups).filter((k) => k !== "*");
+
+      if (!groupIds.length) return undefined;
+
+      const start = Date.now();
+      const effectiveTimeout = timeoutMs ?? 30000; // Default 30 seconds
+      const results: Array<{
+        id: string;
+        ok: boolean;
+        name?: string;
+        type?: string;
+        error?: string;
+      }> = [];
+
+      // Helper to check if we've exceeded the timeout
+      const isTimedOut = () => Date.now() - start > effectiveTimeout;
+
+      for (const groupId of groupIds) {
+        // Check timeout before each API call
+        if (isTimedOut()) {
+          results.push({
+            id: groupId,
+            ok: false,
+            error: "Audit timed out",
+          });
+          continue;
+        }
+
+        try {
+          // Wrap the API call with a timeout
+          const timeRemaining = effectiveTimeout - (Date.now() - start);
+          const chatPromise = getRingCentralChat({ account, chatId: groupId });
+          const timeoutPromise = new Promise<null>((_, reject) =>
+            setTimeout(() => reject(new Error("Request timed out")), Math.max(timeRemaining, 1000))
+          );
+
+          const chat = await Promise.race([chatPromise, timeoutPromise]);
+          results.push({
+            id: groupId,
+            ok: Boolean(chat),
+            name: chat?.name,
+            type: chat?.type,
+            error: chat ? undefined : "Chat not found or no access",
+          });
+        } catch (err) {
+          results.push({
+            id: groupId,
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      return {
+        ok: results.every((r) => r.ok),
+        checkedGroups: results.length,
+        groups: results,
+        elapsedMs: Date.now() - start,
+      };
+    },
+    buildAccountSnapshot: ({ account, runtime, probe, audit }) => ({
       accountId: account.accountId,
       name: account.name,
       enabled: account.enabled,
@@ -522,6 +670,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
       lastOutboundAt: runtime?.lastOutboundAt ?? null,
       dmPolicy: account.config.dm?.policy ?? "allowlist",
       probe,
+      audit,
     }),
   },
   gateway: {
@@ -549,6 +698,19 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
           lastStopAt: Date.now(),
         });
       };
+    },
+    logoutAccount: async ({ cfg, accountId }) => {
+      // Clear cached WebSocket manager for this account to ensure
+      // fresh connections are created if the account is used again.
+      // This is important for:
+      // 1. Releasing resources when logging out
+      // 2. Ensuring credential changes take effect immediately
+      // 3. Avoiding stale connections after logout
+      clearRingCentralWsManager(accountId);
+
+      // Return config unchanged - credentials remain in config file
+      // for manual removal if desired
+      return cfg;
     },
   },
   actions: ringcentralMessageActions,

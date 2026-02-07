@@ -226,11 +226,17 @@ export type RingCentralEventBody = {
 
 // Config types
 
+export type RingCentralGroupToolPolicy = {
+  allow?: string[];
+  deny?: string[];
+};
+
 export type RingCentralGroupConfig = {
   requireMention?: boolean;
   enabled?: boolean;
   users?: Array<string | number>;
   systemPrompt?: string;
+  tools?: RingCentralGroupToolPolicy;
 };
 
 export type RingCentralCredentials = {
@@ -243,6 +249,9 @@ export type RingCentralCredentials = {
 export type RingCentralActionsConfig = {
   messages?: boolean;
   channelInfo?: boolean;
+  tasks?: boolean;
+  events?: boolean;
+  notes?: boolean;
 };
 
 export type RingCentralAccountConfig = {
