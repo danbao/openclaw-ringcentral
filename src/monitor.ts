@@ -471,68 +471,6 @@ async function processMessageWithPipeline(params: {
     },
   });
 
-  // META-ONLY: Always try to update session label/display metadata for group chats,
-  // even if the message will be dropped by allowlist/groupPolicy later.
-  // This keeps sessions list/dashboard readable (label from chatName) without changing reply policy.
-  try {
-    if (isGroup) {
-      const storePath = core.channel.session.resolveStorePath(config.session?.store, {
-        agentId: route.agentId,
-      });
-
-      // If RingCentral chat has no name (often true for Group chats), create a stable label
-      // by resolving up to 3 member first names and joining with commas.
-      let metaLabel: string;
-      if (chatName?.trim()) {
-        metaLabel = chatName.trim();
-      } else {
-        let fallbackParts: string[] = [];
-        try {
-          const memberIds = Array.isArray(chatInfo?.members) ? chatInfo!.members!.slice(0, 3) : [];
-          const memberNames = await Promise.all(
-            memberIds.map(async (id: string) => {
-              try {
-                const u = await getRingCentralUser({ account, userId: id });
-                return u?.firstName?.trim() || null;
-              } catch {
-                return null;
-              }
-            }),
-          );
-          fallbackParts = memberNames.filter((x): x is string => !!x);
-        } catch {
-          // ignore
-        }
-
-        metaLabel = fallbackParts.length > 0 ? fallbackParts.join(", ") : `chat:${chatId}`;
-      }
-
-      void core.channel.session
-        .recordSessionMetaFromInbound({
-          storePath,
-          sessionKey: route.sessionKey,
-          ctx: core.channel.reply.finalizeInboundContext({
-            Provider: "ringcentral",
-            Surface: "ringcentral",
-            From: `ringcentral:group:${chatId}`,
-            To: `ringcentral:${chatId}`,
-            OriginatingChannel: "ringcentral",
-            OriginatingTo: `ringcentral:${chatId}`,
-            ChatType: "channel",
-            AccountId: route.accountId,
-            SessionKey: route.sessionKey,
-            ConversationLabel: metaLabel,
-            GroupSpace: metaLabel,
-            GroupSubject: metaLabel,
-          }),
-        })
-        .catch((err) => {
-          logger.error(`ringcentral: meta-only session meta update failed: ${String(err)}`);
-        });
-    }
-  } catch (err) {
-    logger.error(`ringcentral: meta-only session meta update crashed: ${String(err)}`);
-  }
   logger.debug(`[${account.accountId}] Chat type: ${chatType}, isGroup: ${isGroup}`);
 
   // In selfOnly mode, only allow "Personal" chat (conversation with yourself)
@@ -602,6 +540,65 @@ async function processMessageWithPipeline(params: {
       });
     } else {
       logger.debug(`[${account.accountId}] Skipping chat log: no workspace configured`);
+    }
+
+    // Update session metadata for allowed groups only (after allowlist check passes)
+    try {
+      const storePath = core.channel.session.resolveStorePath(config.session?.store, {
+        agentId: route.agentId,
+      });
+
+      // If RingCentral chat has no name (often true for Group chats), create a stable label
+      // by resolving up to 3 member first names and joining with commas.
+      let metaLabel: string;
+      if (chatName?.trim()) {
+        metaLabel = chatName.trim();
+      } else {
+        let fallbackParts: string[] = [];
+        try {
+          const memberIds = Array.isArray(chatInfo?.members) ? chatInfo!.members!.slice(0, 3) : [];
+          const memberNames = await Promise.all(
+            memberIds.map(async (id: string) => {
+              try {
+                const u = await getRingCentralUser({ account, userId: id });
+                return u?.firstName?.trim() || null;
+              } catch {
+                return null;
+              }
+            }),
+          );
+          fallbackParts = memberNames.filter((x): x is string => !!x);
+        } catch {
+          // ignore
+        }
+
+        metaLabel = fallbackParts.length > 0 ? fallbackParts.join(", ") : `chat:${chatId}`;
+      }
+
+      void core.channel.session
+        .recordSessionMetaFromInbound({
+          storePath,
+          sessionKey: route.sessionKey,
+          ctx: core.channel.reply.finalizeInboundContext({
+            Provider: "ringcentral",
+            Surface: "ringcentral",
+            From: `ringcentral:group:${chatId}`,
+            To: `ringcentral:${chatId}`,
+            OriginatingChannel: "ringcentral",
+            OriginatingTo: `ringcentral:${chatId}`,
+            ChatType: "channel",
+            AccountId: route.accountId,
+            SessionKey: route.sessionKey,
+            ConversationLabel: metaLabel,
+            GroupSpace: metaLabel,
+            GroupSubject: metaLabel,
+          }),
+        })
+        .catch((err) => {
+          logger.error(`ringcentral: session meta update failed: ${String(err)}`);
+        });
+    } catch (err) {
+      logger.error(`ringcentral: session meta update crashed: ${String(err)}`);
     }
   }
 
