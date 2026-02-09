@@ -19,6 +19,7 @@ import {
   createRingCentralNoteAction,
   updateRingCentralNoteAction,
   publishRingCentralNoteAction,
+  searchRingCentralChatAction,
 } from "./actions.js";
 import { normalizeRingCentralTarget } from "./targets.js";
 import type { RingCentralActionsConfig } from "./types.js";
@@ -41,7 +42,8 @@ type RingCentralActionName =
   | "list-notes"
   | "create-note"
   | "update-note"
-  | "publish-note";
+  | "publish-note"
+  | "search-chat";
 
 type ChannelMessageActionContext = {
   channel: string;
@@ -131,7 +133,7 @@ export const ringcentralMessageActions: RingCentralMessageActionAdapter = {
     );
     if (configuredAccounts.length === 0) return [];
 
-    const actions = new Set<RingCentralActionName>(["send"]);
+    const actions = new Set<RingCentralActionName>(["send", "search-chat"]);
 
     // Check if any account has messages actions enabled
     const isActionEnabled = (key: keyof RingCentralActionsConfig, defaultValue = true) => {
@@ -197,6 +199,7 @@ export const ringcentralMessageActions: RingCentralMessageActionAdapter = {
       "create-note",
       "update-note",
       "publish-note",
+      "search-chat",
     ]);
     return supportedActions.has(action);
   },
@@ -610,6 +613,20 @@ export const ringcentralMessageActions: RingCentralMessageActionAdapter = {
           status: "ok",
           noteId: result.noteId,
           published: true,
+        });
+      }
+
+      if (action === "search-chat") {
+        const query = readStringParam(params, "query", { required: true });
+        if (!query) {
+          return errorResult("query is required");
+        }
+
+        const result = searchRingCentralChatAction(query);
+
+        return jsonResult({
+          status: "ok",
+          ...result,
         });
       }
 

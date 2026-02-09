@@ -22,6 +22,7 @@ import {
   formatRcApiError,
 } from "./api.js";
 import { getRingCentralRuntime } from "./runtime.js";
+import { startChatCacheSync, stopChatCacheSync } from "./chat-cache.js";
 import type {
   RingCentralWebhookEvent,
   RingCentralEventBody,
@@ -1242,11 +1243,22 @@ export async function startRingCentralMonitor(
   // Initial connection
   await createSubscription();
 
+  // Start chat cache sync
+  const workspace = account.config.workspace ?? (config.agents as any)?.defaults?.workspace;
+  startChatCacheSync({
+    account,
+    workspace: workspace as string | undefined,
+    logger,
+    abortSignal,
+  });
+
   // Handle abort signal
   const cleanup = () => {
     isShuttingDown = true;
     logger.info(`[${account.accountId}] Stopping RingCentral WebSocket subscription...`);
     
+    stopChatCacheSync();
+
     if (reconnectTimeout) {
       clearTimeout(reconnectTimeout);
       reconnectTimeout = null;

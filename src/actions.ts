@@ -573,3 +573,18 @@ export async function publishRingCentralNoteAction(
 
   return { noteId: result.id };
 }
+
+// Chat Search Action
+
+/**
+ * Search for chats by name (fuzzy match from cache).
+ */
+export function searchRingCentralChatAction(
+  query: string,
+): { results: Array<{ chatId: string; name: string; type: string }> } {
+  const { searchCachedChats } = require("./chat-cache.js") as typeof import("./chat-cache.js");
+  const matches = searchCachedChats(query);
+  return {
+    results: matches.map((c) => ({ chatId: c.id, name: c.name, type: c.type })),
+  };
+}

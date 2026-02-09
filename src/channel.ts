@@ -88,8 +88,8 @@ export const ringcentralDock: ChannelDock = {
   agentPrompt: {
     messageToolHints: () => [
       "- RingCentral message actions require a numeric `chatId`. Use `action=read` to fetch message history, `action=edit` to edit, `action=delete` to delete, `action=channel-info` to get chat details.",
-      "- When user provides a chat name with its chatId (e.g., \"Engineering Team chatId is 123456789\"), save the mapping to memory so you can look it up later by name.",
-      "- Before asking user for chatId, use `memory_search` to check if you've previously stored a name→chatId mapping for the chat they mentioned.",
+      "- Use `action=search-chat` with a `query` parameter to find a chat by name or person name and get its chatId. This searches Team names, Group names, and Direct chat contact names.",
+      "- Before asking user for chatId, first try `action=search-chat` to look up the chat by the name they mentioned.",
     ],
   },
 };
