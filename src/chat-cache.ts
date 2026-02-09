@@ -46,7 +46,7 @@ export function getCachedChats(): CachedChat[] {
 export function searchCachedChats(query: string): CachedChat[] {
   const q = query.toLowerCase().trim();
   if (!q) return [];
-  return memoryCache.filter((c) => c.name.toLowerCase().includes(q));
+  return memoryCache.filter((c) => (c.name || "").toLowerCase().includes(q));
 }
 
 function resolveCachePath(workspace: string): string {
