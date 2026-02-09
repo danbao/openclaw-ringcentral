@@ -27,12 +27,10 @@ type ChatCacheLogger = {
   error: (message: string) => void;
 };
 
-const SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 const CHAT_TYPES = ["Personal", "Direct", "Group", "Team", "Everyone"] as const;
 const CACHE_FILE = "ringcentral-chat-cache.json";
 
 let memoryCache: CachedChat[] = [];
-let syncTimer: ReturnType<typeof setInterval> | null = null;
 let syncContext: {
   account: ResolvedRingCentralAccount;
   workspace: string | undefined;
@@ -210,39 +208,18 @@ export function startChatCacheSync(params: {
   logger: ChatCacheLogger;
   abortSignal: AbortSignal;
 }): void {
-  const { account, workspace, logger, abortSignal } = params;
+  const { account, workspace, logger } = params;
   syncContext = { account, workspace, logger };
 
+  // Only restore from local file; no automatic API sync to avoid 429
   if (workspace) {
     memoryCache = readCacheFile(workspace, logger);
     if (memoryCache.length > 0) {
       logger.info(`[chat-cache] Restored ${memoryCache.length} chats from file cache`);
     }
   }
-
-  void syncOnce(account, workspace, logger);
-
-  syncTimer = setInterval(() => {
-    if (abortSignal.aborted) {
-      stopChatCacheSync();
-      return;
-    }
-    void syncOnce(account, workspace, logger);
-  }, SYNC_INTERVAL_MS);
-
-  abortSignal.addEventListener(
-    "abort",
-    () => {
-      stopChatCacheSync();
-    },
-    { once: true },
-  );
 }
 
 export function stopChatCacheSync(): void {
-  if (syncTimer) {
-    clearInterval(syncTimer);
-    syncTimer = null;
-  }
   syncContext = null;
 }
