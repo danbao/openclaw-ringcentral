@@ -120,12 +120,19 @@ async function resolvePersonName(
   }
 }
 
+const PERSON_RESOLVE_DELAY_MS = 500; // delay between /persons requests to avoid 429
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function fetchAllChats(
   account: ResolvedRingCentralAccount,
   logger: ChatCacheLogger,
 ): Promise<CachedChat[]> {
   const ownerId = await resolveOwnerId(account, logger);
   const result: CachedChat[] = [];
+  const directChatsToResolve: Array<{ index: number; peerId: string }> = [];
 
   for (const chatType of CHAT_TYPES) {
     try {
@@ -138,7 +145,6 @@ async function fetchAllChats(
       for (const chat of chats) {
         if (!chat.id) continue;
 
-        // members can be string[] or {id:string}[] depending on chat type
         const rawMembers = chat.members ?? [];
         const memberIds = rawMembers.map((m: unknown) =>
           typeof m === "object" && m !== null && "id" in m ? String((m as { id: unknown }).id) : String(m),
@@ -146,26 +152,41 @@ async function fetchAllChats(
 
         let name = chat.name ?? "";
 
-        if (chatType === "Direct" && !name && memberIds.length > 0) {
-          const peerId = memberIds.find((id) => id !== ownerId);
-          if (peerId) {
-            name = await resolvePersonName(account, peerId, logger);
-          }
-        }
-
         if (chatType === "Personal" && !name) {
           name = "(Personal)";
         }
 
+        const idx = result.length;
         result.push({
           id: chat.id,
           name: String(name || ""),
           type: chat.type ?? chatType,
           members: memberIds,
         });
+
+        // Collect Direct chats that need name resolution
+        if (chatType === "Direct" && !name && memberIds.length > 0) {
+          const peerId = memberIds.find((id) => id !== ownerId);
+          if (peerId) {
+            directChatsToResolve.push({ index: idx, peerId });
+          }
+        }
       }
     } catch (err) {
       logger.error(`[chat-cache] Failed to fetch ${chatType} chats: ${String(err)}`);
+    }
+  }
+
+  // Resolve Direct chat names sequentially with delay to avoid 429
+  if (directChatsToResolve.length > 0) {
+    logger.debug(`[chat-cache] Resolving ${directChatsToResolve.length} Direct chat names...`);
+    for (let i = 0; i < directChatsToResolve.length; i++) {
+      const { index, peerId } = directChatsToResolve[i];
+      if (i > 0) {
+        await sleep(PERSON_RESOLVE_DELAY_MS);
+      }
+      const name = await resolvePersonName(account, peerId, logger);
+      result[index].name = String(name || "");
     }
   }
 
