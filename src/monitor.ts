@@ -55,11 +55,14 @@ const recentlySentMessageIds = new Set<string>();
 const MESSAGE_ID_TTL = 60000; // 60 seconds
 
 // Reconnection settings
-const RECONNECT_INITIAL_DELAY = 5000; // 5 seconds (increased to avoid 429)
-const RECONNECT_MAX_DELAY = 300000; // 5 minutes (increased for rate limiting)
-const RECONNECT_MAX_ATTEMPTS = 10; // Increased for long-term resilience
+const RECONNECT_INITIAL_DELAY = 5000; // 5 seconds
+const RECONNECT_MAX_DELAY = 300000; // 5 minutes
 const RATE_LIMIT_BACKOFF = 60000; // 1 minute backoff on 429
-const WS_HEALTH_CHECK_INTERVAL = 60000; // Check WebSocket health every 60 seconds
+
+// Health check / watchdog settings
+const HEALTH_CHECK_INTERVAL_MS = 30_000; // check every 30s
+const INBOUND_STALE_THRESHOLD_MS = 5 * 60_000; // 5 minutes no inbound → force reconnect
+const SLEEP_DRIFT_THRESHOLD_MS = 10_000; // >10s timer drift → system likely slept
 
 // WebSocket singleton per account to avoid hammering /oauth/wstoken.
 // @ringcentral/subscriptions + @rc-ex/ws can swallow initial connect errors and
@@ -995,19 +998,29 @@ export async function startRingCentralMonitor(
   let wsSubscription: Awaited<ReturnType<ReturnType<InstanceType<typeof Subscriptions>["createSubscription"]>["register"]>> | null = null;
   let reconnectAttempts = 0;
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  let healthCheckTimer: ReturnType<typeof setInterval> | null = null;
   let isShuttingDown = false;
+  let isReconnecting = false;
   let ownerId: string | undefined;
+
+  // Observability state
+  let lastInboundAt = 0;
+  let lastReconnectAt = 0;
+  let totalReconnects = 0;
+  let lastHealthCheckWallClock = Date.now();
 
   // Avoid hammering /oauth/wstoken (auth rate limit is very low, e.g. 5/min).
   let nextAllowedWsConnectAt = 0;
 
-  // Calculate delay with exponential backoff
+  // Calculate delay with exponential backoff + jitter
   const getReconnectDelay = () => {
-    const delay = Math.min(
+    const base = Math.min(
       RECONNECT_INITIAL_DELAY * Math.pow(2, reconnectAttempts),
-      RECONNECT_MAX_DELAY
+      RECONNECT_MAX_DELAY,
     );
-    return delay;
+    // Add ±25% jitter to avoid thundering herd
+    const jitter = base * 0.25 * (Math.random() * 2 - 1);
+    return Math.max(1000, Math.floor(base + jitter));
   };
 
   // Create and setup subscription
@@ -1098,6 +1111,7 @@ export async function startRingCentralMonitor(
       // Handle notifications
       subscription.on(subscription.events.notification, (event: unknown) => {
         logger.debug(`WebSocket notification received: ${JSON.stringify(event)}`);
+        lastInboundAt = Date.now();
         const evt = event as RingCentralWebhookEvent;
         processWebSocketEvent({
           event: evt,
@@ -1129,8 +1143,13 @@ export async function startRingCentralMonitor(
         subscription.emit(subscription.events.notification, event);
       });
       
-      logger.info(`[${account.accountId}] RingCentral WebSocket subscription established`);
-      reconnectAttempts = 0; // Reset on success
+      logger.info(
+        `[${account.accountId}] RingCentral WebSocket subscription established` +
+          ` | totalReconnects=${totalReconnects}` +
+          ` | lastInboundAt=${lastInboundAt ? new Date(lastInboundAt).toISOString() : "never"}`,
+      );
+      reconnectAttempts = 0; // Reset backoff on success
+      isReconnecting = false;
 
       // Setup WebSocket close/error handlers for auto-reconnect
       const ws = mgr.wsExt.ws;
@@ -1215,16 +1234,22 @@ export async function startRingCentralMonitor(
   // Schedule reconnection with exponential backoff
   const scheduleReconnect = (isRateLimited = false) => {
     if (isShuttingDown || abortSignal.aborted) return;
-    if (reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
-      logger.error(`[${account.accountId}] Max reconnection attempts (${RECONNECT_MAX_ATTEMPTS}) reached. Giving up.`);
-      return;
-    }
+    if (isReconnecting) return; // prevent overlapping reconnect attempts
+    isReconnecting = true;
 
-    // Use longer delay if rate limited
+    // No max attempts cap -- always try to recover
     const baseDelay = isRateLimited ? RATE_LIMIT_BACKOFF : getReconnectDelay();
     const delay = Math.min(baseDelay, RECONNECT_MAX_DELAY);
     reconnectAttempts++;
-    logger.warn(`[${account.accountId}] Scheduling reconnection attempt ${reconnectAttempts}/${RECONNECT_MAX_ATTEMPTS} in ${delay}ms${isRateLimited ? " (rate limited)" : ""}...`);
+    totalReconnects++;
+    lastReconnectAt = Date.now();
+
+    logger.warn(
+      `[${account.accountId}] Scheduling reconnect #${reconnectAttempts} in ${Math.ceil(delay / 1000)}s` +
+        `${isRateLimited ? " (rate limited)" : ""}` +
+        ` | totalReconnects=${totalReconnects}` +
+        ` | lastInboundAt=${lastInboundAt ? new Date(lastInboundAt).toISOString() : "never"}`,
+    );
 
     // Clean up existing WsSubscription
     if (wsSubscription) {
@@ -1232,8 +1257,13 @@ export async function startRingCentralMonitor(
       wsSubscription = null;
     }
 
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout);
+    }
+
     reconnectTimeout = setTimeout(() => {
       reconnectTimeout = null;
+      isReconnecting = false;
       createSubscription().catch((err) => {
         logger.error(`[${account.accountId}] Reconnection failed: ${String(err)}`);
       });
@@ -1252,12 +1282,67 @@ export async function startRingCentralMonitor(
     abortSignal,
   });
 
+  // ─── Health check watchdog ───
+  // Detects silent WS degradation (e.g. after macOS sleep/wake) by:
+  // 1. Checking timer drift to detect system sleep
+  // 2. Verifying WS readyState is still OPEN
+  // 3. Checking if inbound messages have gone stale (optional, only after first message)
+  lastHealthCheckWallClock = Date.now();
+  healthCheckTimer = setInterval(() => {
+    if (isShuttingDown || abortSignal.aborted) return;
+
+    const now = Date.now();
+    const elapsed = now - lastHealthCheckWallClock;
+    lastHealthCheckWallClock = now;
+
+    // Detect sleep/wake: if elapsed >> interval, the system likely slept
+    if (elapsed > HEALTH_CHECK_INTERVAL_MS + SLEEP_DRIFT_THRESHOLD_MS) {
+      logger.warn(
+        `[${account.accountId}] System wake detected (timer drift ${Math.round(elapsed / 1000)}s). Forcing reconnect...`,
+      );
+      wsManagers.delete(account.accountId);
+      scheduleReconnect();
+      return;
+    }
+
+    // Check WS readyState
+    const mgr = wsManagers.get(account.accountId);
+    const ws = mgr?.wsExt?.ws;
+    if (ws && ws.readyState !== 0 && ws.readyState !== 1) {
+      logger.warn(
+        `[${account.accountId}] WebSocket readyState=${ws.readyState} (not OPEN). Forcing reconnect...`,
+      );
+      wsManagers.delete(account.accountId);
+      scheduleReconnect();
+      return;
+    }
+
+    // If we've ever received inbound and it's been stale too long, force reconnect
+    if (lastInboundAt > 0 && now - lastInboundAt > INBOUND_STALE_THRESHOLD_MS) {
+      logger.warn(
+        `[${account.accountId}] No inbound for ${Math.round((now - lastInboundAt) / 1000)}s (threshold=${INBOUND_STALE_THRESHOLD_MS / 1000}s). Forcing reconnect...`,
+      );
+      wsManagers.delete(account.accountId);
+      scheduleReconnect();
+      return;
+    }
+  }, HEALTH_CHECK_INTERVAL_MS);
+
   // Handle abort signal
   const cleanup = () => {
     isShuttingDown = true;
-    logger.info(`[${account.accountId}] Stopping RingCentral WebSocket subscription...`);
+    logger.info(
+      `[${account.accountId}] Stopping RingCentral WebSocket subscription...` +
+        ` | totalReconnects=${totalReconnects}` +
+        ` | lastInboundAt=${lastInboundAt ? new Date(lastInboundAt).toISOString() : "never"}`,
+    );
     
     stopChatCacheSync();
+
+    if (healthCheckTimer) {
+      clearInterval(healthCheckTimer);
+      healthCheckTimer = null;
+    }
 
     if (reconnectTimeout) {
       clearTimeout(reconnectTimeout);
