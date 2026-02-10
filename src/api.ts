@@ -802,7 +802,17 @@ export async function publishRingCentralNote(params: {
   const platform = await getRingCentralPlatform(account);
 
   const response = await platform.post(`${TM_API_BASE}/notes/${noteId}/publish`, {});
-  return (await response.json()) as RingCentralNote;
+
+  // The publish endpoint may return an empty body (200/204) on success.
+  const text = await response.text();
+  if (text) {
+    try {
+      return JSON.parse(text) as RingCentralNote;
+    } catch {
+      // Body present but not valid JSON — treat 2xx as success
+    }
+  }
+  return { id: noteId, status: "Active" } as RingCentralNote;
 }
 
 // Incoming Webhooks API
