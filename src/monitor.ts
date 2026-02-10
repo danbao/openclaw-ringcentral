@@ -252,9 +252,12 @@ async function saveGroupChatMessage(params: {
       timeZone: "Asia/Shanghai",
     });
 
+    // Sanitize chatId to prevent path traversal
+    const safeChatId = path.basename(chatId).replace(/[^a-zA-Z0-9_-]/g, "_");
+
     // Build file path
     const chatDir = path.join(workspace, "memory", "chats", dateStr);
-    const filePath = path.join(chatDir, `${chatId}.md`);
+    const filePath = path.join(chatDir, `${safeChatId}.md`);
 
     // Ensure directory exists
     await fs.promises.mkdir(chatDir, { recursive: true });
