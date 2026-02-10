@@ -7,6 +7,7 @@ import {
   getRingCentralUser,
   getCurrentRingCentralUser,
 } from "./api.js";
+import type { RingCentralChat } from "./types.js";
 
 export type CachedChat = {
   id: string;
@@ -146,54 +147,64 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchAllChats(
+export async function fetchAllChats(
   account: ResolvedRingCentralAccount,
   logger: ChatCacheLogger,
-): Promise<CachedChat[]> {
-  const ownerId = await resolveOwnerId(account, logger);
-  const result: CachedChat[] = [];
-  const directChatsToResolve: Array<{ index: number; peerId: string }> = [];
+): Promise<{ chats: CachedChat[]; ownerId: string | undefined }> {
+  const ownerIdPromise = resolveOwnerId(account, logger);
 
-  for (const chatType of CHAT_TYPES) {
+  const chatPromises = CHAT_TYPES.map(async (chatType) => {
     try {
       const chats = await listRingCentralChats({
         account,
         type: [chatType],
         limit: 250,
       });
-
-      for (const chat of chats) {
-        if (!chat.id) continue;
-
-        const rawMembers = chat.members ?? [];
-        const memberIds = rawMembers.map((m: unknown) =>
-          typeof m === "object" && m !== null && "id" in m ? String((m as { id: unknown }).id) : String(m),
-        );
-
-        let name = chat.name ?? "";
-
-        if (chatType === "Personal" && !name) {
-          name = "(Personal)";
-        }
-
-        const idx = result.length;
-        result.push({
-          id: chat.id,
-          name: String(name || ""),
-          type: chat.type ?? chatType,
-          members: memberIds,
-        });
-
-        // Collect Direct chats that need name resolution
-        if (chatType === "Direct" && !name && memberIds.length > 0) {
-          const peerId = memberIds.find((id) => id !== ownerId);
-          if (peerId) {
-            directChatsToResolve.push({ index: idx, peerId });
-          }
-        }
-      }
+      return { chatType, chats };
     } catch (err) {
       logger.error(`[chat-cache] Failed to fetch ${chatType} chats: ${String(err)}`);
+      return { chatType, chats: [] as RingCentralChat[] };
+    }
+  });
+
+  const [ownerId, chatResults] = await Promise.all([
+    ownerIdPromise,
+    Promise.all(chatPromises),
+  ]);
+
+  const result: CachedChat[] = [];
+  const directChatsToResolve: Array<{ index: number; peerId: string }> = [];
+
+  for (const { chatType, chats } of chatResults) {
+    for (const chat of chats) {
+      if (!chat.id) continue;
+
+      const rawMembers = chat.members ?? [];
+      const memberIds = rawMembers.map((m: unknown) =>
+        typeof m === "object" && m !== null && "id" in m ? String((m as { id: unknown }).id) : String(m),
+      );
+
+      let name = chat.name ?? "";
+
+      if (chatType === "Personal" && !name) {
+        name = "(Personal)";
+      }
+
+      const idx = result.length;
+      result.push({
+        id: chat.id,
+        name: String(name || ""),
+        type: chat.type ?? chatType,
+        members: memberIds,
+      });
+
+      // Collect Direct chats that need name resolution
+      if (chatType === "Direct" && !name && memberIds.length > 0) {
+        const peerId = memberIds.find((id) => id !== ownerId);
+        if (peerId) {
+          directChatsToResolve.push({ index: idx, peerId });
+        }
+      }
     }
   }
 
@@ -210,7 +221,7 @@ async function fetchAllChats(
     }
   }
 
-  return result;
+  return { chats: result, ownerId };
 }
 
 async function syncOnce(
@@ -220,13 +231,11 @@ async function syncOnce(
 ): Promise<void> {
   logger.debug(`[chat-cache] Syncing chats for account ${account.accountId}...`);
   try {
-    // Resolve and cache ownerId for precise Direct chat matching
-    const ownerId = await resolveOwnerId(account, logger);
+    const { chats, ownerId } = await fetchAllChats(account, logger);
     if (ownerId) {
       cachedOwnerId = ownerId;
     }
 
-    const chats = await fetchAllChats(account, logger);
     const changed = cacheChanged(memoryCache, chats);
     memoryCache = chats;
 
