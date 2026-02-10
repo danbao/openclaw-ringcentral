@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { isSenderAllowed, detectLoopGuardMarker, isPureAttachmentPlaceholder } from "./monitor.js";
+import { describe, expect, it, vi } from "vitest";
+import * as fs from "fs";
+import { isSenderAllowed, detectLoopGuardMarker, isPureAttachmentPlaceholder, sanitizeFilename, saveGroupChatMessage, type RingCentralLogger } from "./monitor.js";
 
 describe("isSenderAllowed", () => {
   it("returns true when allowFrom contains wildcard", () => {
@@ -190,5 +191,84 @@ describe("isPureAttachmentPlaceholder", () => {
   it("returns false for empty string", () => {
     expect(isPureAttachmentPlaceholder("")).toBe(false);
     expect(isPureAttachmentPlaceholder("   ")).toBe(false);
+  });
+});
+
+describe("sanitizeFilename", () => {
+  it("removes unsafe characters", () => {
+    expect(sanitizeFilename("foo/bar")).toBe("foo_bar");
+    expect(sanitizeFilename("foo\\bar")).toBe("foo_bar");
+    expect(sanitizeFilename("foo:bar")).toBe("foo_bar");
+    expect(sanitizeFilename("foo*bar")).toBe("foo_bar");
+    expect(sanitizeFilename("foo?bar")).toBe("foo_bar");
+    expect(sanitizeFilename("foo\"bar")).toBe("foo_bar");
+    expect(sanitizeFilename("foo<bar")).toBe("foo_bar");
+    expect(sanitizeFilename("foo>bar")).toBe("foo_bar");
+    expect(sanitizeFilename("foo|bar")).toBe("foo_bar");
+  });
+
+  it("preserves safe characters", () => {
+    expect(sanitizeFilename("foo-bar_baz.txt")).toBe("foo-bar_baz_txt");
+    expect(sanitizeFilename("12345")).toBe("12345");
+  });
+
+  it("removes dots entirely", () => {
+    expect(sanitizeFilename(".foo")).toBe("_foo");
+    expect(sanitizeFilename("foo.")).toBe("foo_");
+    expect(sanitizeFilename("foo.bar")).toBe("foo_bar");
+  });
+
+  it("handles empty string", () => {
+    expect(sanitizeFilename("")).toBe("");
+  });
+
+  it("handles path traversal attempts", () => {
+    // ../../etc/passwd -> ______etc_passwd
+    // . -> _ (so .. -> __)
+    // / -> _
+    expect(sanitizeFilename("../../etc/passwd")).toBe("______etc_passwd");
+  });
+});
+
+// Mock fs.promises for saveGroupChatMessage
+vi.mock("fs", async () => {
+  return {
+    promises: {
+      mkdir: vi.fn(),
+      access: vi.fn(),
+      appendFile: vi.fn(),
+    },
+  };
+});
+
+describe("saveGroupChatMessage", () => {
+  it("sanitizes chatId to prevent path traversal", async () => {
+    const logger: RingCentralLogger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+
+    const workspace = "/app/workspace";
+    const chatId = "../../etc/passwd";
+    const messageText = "payload";
+
+    await saveGroupChatMessage({
+      workspace,
+      chatId,
+      senderId: "attacker",
+      messageText,
+      logger,
+    });
+
+    const appendFileMock = fs.promises.appendFile as any;
+    expect(appendFileMock).toHaveBeenCalled();
+    const filePath = appendFileMock.mock.calls[0][0];
+
+    // The sanitized chatId should be used
+    // sanitizeFilename("../../etc/passwd") -> "______etc_passwd"
+    expect(filePath).not.toContain("etc/passwd");
+    expect(filePath).toContain("______etc_passwd.md");
   });
 });

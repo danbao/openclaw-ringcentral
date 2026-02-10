@@ -221,11 +221,18 @@ function logVerbose(
   }
 }
 
+export function sanitizeFilename(name: string): string {
+  // Replace unsafe chars with underscore.
+  // We explicitly disallow dots to prevent path traversal via ".."
+  // RingCentral IDs are typically numeric, so this is safe.
+  return name.replace(/[^a-zA-Z0-9-_]/g, "_");
+}
+
 /**
  * Save group chat message to workspace memory file.
  * File path: ${workspace}/memory/chats/YYYY-MM-DD/${chatId}.md
  */
-async function saveGroupChatMessage(params: {
+export async function saveGroupChatMessage(params: {
   workspace: string;
   chatId: string;
   chatName?: string;
@@ -254,7 +261,8 @@ async function saveGroupChatMessage(params: {
 
     // Build file path
     const chatDir = path.join(workspace, "memory", "chats", dateStr);
-    const filePath = path.join(chatDir, `${chatId}.md`);
+    const safeChatId = sanitizeFilename(chatId);
+    const filePath = path.join(chatDir, `${safeChatId}.md`);
 
     // Ensure directory exists
     await fs.promises.mkdir(chatDir, { recursive: true });
