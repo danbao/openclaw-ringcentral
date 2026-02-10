@@ -91,6 +91,7 @@ export const ringcentralDock: ChannelDock = {
       "- Use `action=search-chat` with a `query` parameter to find a chat by name or person name and get its chatId. This searches Team names, Group names, and Direct chat contact names.",
       "- Before asking user for chatId, first try `action=search-chat` to look up the chat by the name they mentioned.",
       "- When user says '刷新RingCentral群组', '初始化RingCentral', 'refresh RingCentral groups', 'initialize RingCentral', 'reload RingCentral chats', 'sync RingCentral groups', or similar, execute `action=refresh-chat-cache` to reload the chat list cache.",
+      "- When user says '发给我' or 'send to me', use `action=find-direct-chat` with `memberId` set to the sender's userId to get the DM chatId, then use that chatId. Do NOT use the current group chatId.",
     ],
   },
 };

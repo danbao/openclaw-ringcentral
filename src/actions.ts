@@ -522,7 +522,7 @@ export async function createRingCentralNoteAction(
     body?: string;
     publish?: boolean;
   },
-): Promise<{ noteId?: string; status?: string }> {
+): Promise<{ noteId?: string; status?: string; error?: string }> {
   const account = getAccount(opts);
   const targetChatId = normalizeTarget(chatId);
 
@@ -533,9 +533,15 @@ export async function createRingCentralNoteAction(
     body: opts.body,
   });
 
-  if (opts.publish && result.id) {
-    const published = await publishRingCentralNote({ account, noteId: result.id });
-    return { noteId: result.id, status: published.status ?? "Active" };
+  const shouldPublish = opts.publish !== false;
+
+  if (shouldPublish && result.id) {
+    try {
+      const published = await publishRingCentralNote({ account, noteId: result.id });
+      return { noteId: result.id, status: published.status ?? "Active" };
+    } catch (err) {
+      return { noteId: result.id, status: "Draft", error: `publish failed: ${String(err)}` };
+    }
   }
 
   return { noteId: result.id, status: result.status ?? "Draft" };
@@ -593,6 +599,23 @@ export function searchRingCentralChatAction(
   return {
     results: matches.map((c) => ({ chatId: c.id, name: c.name, type: c.type })),
   };
+}
+
+/**
+ * Find Direct chat by member userId (e.g. senderId).
+ * Returns the exact DM between the bot (selfId) and the given memberId.
+ */
+export function findRingCentralDirectChatAction(memberId: string): {
+  chatId?: string;
+  name?: string;
+  participants?: string[];
+} {
+  const { findDirectChatByMember } = require("./chat-cache.js") as typeof import("./chat-cache.js");
+  const chat = findDirectChatByMember(memberId);
+  if (chat) {
+    return { chatId: chat.id, name: chat.name, participants: chat.members };
+  }
+  return {};
 }
 
 /**

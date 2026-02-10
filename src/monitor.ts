@@ -55,11 +55,14 @@ const recentlySentMessageIds = new Set<string>();
 const MESSAGE_ID_TTL = 60000; // 60 seconds
 
 // Reconnection settings
-const RECONNECT_INITIAL_DELAY = 5000; // 5 seconds (increased to avoid 429)
-const RECONNECT_MAX_DELAY = 300000; // 5 minutes (increased for rate limiting)
-const RECONNECT_MAX_ATTEMPTS = 10; // Increased for long-term resilience
+const RECONNECT_INITIAL_DELAY = 5000; // 5 seconds
+const RECONNECT_MAX_DELAY = 300000; // 5 minutes
 const RATE_LIMIT_BACKOFF = 60000; // 1 minute backoff on 429
-const WS_HEALTH_CHECK_INTERVAL = 60000; // Check WebSocket health every 60 seconds
+
+// Health check / watchdog settings
+const HEALTH_CHECK_INTERVAL_MS = 30_000; // check every 30s
+const INBOUND_STALE_THRESHOLD_MS = 5 * 60_000; // 5 minutes no inbound → force reconnect
+const SLEEP_DRIFT_THRESHOLD_MS = 10_000; // >10s timer drift → system likely slept
 
 // WebSocket singleton per account to avoid hammering /oauth/wstoken.
 // @ringcentral/subscriptions + @rc-ex/ws can swallow initial connect errors and
@@ -316,7 +319,7 @@ async function processWebSocketEvent(params: {
   ownerId?: string;
 }): Promise<void> {
   const { event, account, config, runtime, core, statusSink, ownerId } = params;
-  
+
   const eventBody = event.body;
   if (!eventBody) return;
 
@@ -324,7 +327,7 @@ async function processWebSocketEvent(params: {
   const eventType = eventBody.eventType;
   const eventPath = event.event ?? "";
   const isPostEvent = eventPath.includes("/glip/posts") || eventPath.includes("/team-messaging") || eventType === "PostAdded";
-  
+
   if (!isPostEvent) {
     return;
   }
@@ -354,7 +357,7 @@ async function processMessageWithPipeline(params: {
   const { eventBody, account, config, runtime, core, statusSink, ownerId } = params;
   const logger = getLogger(core);
   const mediaMaxMb = account.config.mediaMaxMb ?? 20;
-  
+
   const chatId = eventBody.groupId ?? "";
   if (!chatId) return;
 
@@ -372,26 +375,26 @@ async function processMessageWithPipeline(params: {
     logVerbose(core, `skip own sent message: ${messageId}`);
     return;
   }
-  
+
   // Check 2: Skip typing/thinking indicators (pattern-based)
   if (rawBody.includes("thinking...") || rawBody.includes("typing...")) {
     logVerbose(core, "skip typing indicator message");
     return;
   }
-  
+
   // In JWT mode (selfOnly), only accept messages from the JWT user themselves
   // This is because the bot uses the JWT user's identity, so we're essentially
   // having a conversation with ourselves (the AI assistant)
   const selfOnly = account.config.selfOnly !== false; // default true
   logger.debug(`[${account.accountId}] Processing message: senderId=${senderId}, ownerId=${ownerId}, selfOnly=${selfOnly}, chatId=${chatId}`);
-  
+
   if (selfOnly && ownerId) {
     if (senderId !== ownerId) {
       logVerbose(core, `ignore message from non-owner: ${senderId} (selfOnly mode)`);
       return;
     }
   }
-  
+
   logger.debug(`[${account.accountId}] Message passed selfOnly check`);
 
   // Fetch chat info to determine type
@@ -406,8 +409,8 @@ async function processMessageWithPipeline(params: {
     // OpenClaw logger respects configured log level - debug output controlled by openclaw config
     logger.debug(
       `[${account.accountId}] chatInfo: id=${chatId} type=${chatInfo?.type ?? null} ` +
-        `name=${JSON.stringify(chatInfo?.name ?? null)} members=${JSON.stringify(chatInfo?.members ?? null)} ` +
-        `description=${JSON.stringify(chatInfo?.description ?? null)}`,
+      `name=${JSON.stringify(chatInfo?.name ?? null)} members=${JSON.stringify(chatInfo?.members ?? null)} ` +
+      `description=${JSON.stringify(chatInfo?.description ?? null)}`,
     );
   } catch (err) {
     // If we can't fetch chat info, assume it's a group.
@@ -617,11 +620,11 @@ async function processMessageWithPipeline(params: {
   const senderAllowedForCommands = isSenderAllowed(senderId, commandAllowFrom);
   const commandAuthorized = shouldComputeAuth
     ? core.channel.commands.resolveCommandAuthorizedFromAuthorizers({
-        useAccessGroups,
-        authorizers: [
-          { configured: commandAllowFrom.length > 0, allowed: senderAllowedForCommands },
-        ],
-      })
+      useAccessGroups,
+      authorizers: [
+        { configured: commandAllowFrom.length > 0, allowed: senderAllowedForCommands },
+      ],
+    })
     : undefined;
 
   if (isGroup) {
@@ -644,10 +647,10 @@ async function processMessageWithPipeline(params: {
       commandAuthorized: commandAuthorized === true,
     });
     effectiveWasMentioned = mentionGate.effectiveWasMentioned;
-    
+
     // Response decision is now delegated to the AI based on SOUL/identity
     // Plugin only handles mention gating; AI decides whether to respond or NO_REPLY
-    
+
     if (mentionGate.shouldSkip) {
       logVerbose(core, `drop group message (mention required, chat=${chatId})`);
       return;
@@ -817,7 +820,24 @@ async function processMessageWithPipeline(params: {
     logger.error(`ringcentral: failed repairing session label: ${String(err)}`);
   }
 
-  // Typing indicator disabled - respond directly without "thinking" message
+  // Send "thinking" indicator before dispatching reply (follows Google Chat pattern)
+  const botName = resolveBotDisplayName({
+    accountName: account.config.name,
+    agentId: route.agentId,
+    config,
+  });
+  let typingPostId: string | undefined;
+  try {
+    const thinkingResult = await sendRingCentralMessage({
+      account,
+      chatId,
+      text: `> 🦞 ${botName} is thinking...`,
+    });
+    typingPostId = thinkingResult?.postId;
+    if (typingPostId) trackSentMessageId(typingPostId);
+  } catch (err) {
+    logger.debug(`[${account.accountId}] Failed to send thinking indicator: ${String(err)}`);
+  }
 
   await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
     ctx: ctxPayload,
@@ -831,8 +851,10 @@ async function processMessageWithPipeline(params: {
           core,
           config,
           statusSink,
-          typingPostId: undefined,
+          typingPostId,
         });
+        // Only use typing message for first delivery
+        typingPostId = undefined;
       },
       onError: (err, info) => {
         logger.error(
@@ -946,6 +968,7 @@ async function deliverRingCentralReply(params: {
   }
 
   if (payload.text) {
+    const wrappedText = `> --------answer--------\n${payload.text}\n> ---------end----------`;
     const chunkLimit = account.config.textChunkLimit ?? 4000;
     const chunkMode = core.channel.text.resolveChunkMode(
       config,
@@ -953,7 +976,7 @@ async function deliverRingCentralReply(params: {
       account.accountId,
     );
     const chunks = core.channel.text.chunkMarkdownTextWithMode(
-      payload.text,
+      wrappedText,
       chunkLimit,
       chunkMode,
     );
@@ -995,19 +1018,29 @@ export async function startRingCentralMonitor(
   let wsSubscription: Awaited<ReturnType<ReturnType<InstanceType<typeof Subscriptions>["createSubscription"]>["register"]>> | null = null;
   let reconnectAttempts = 0;
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  let healthCheckTimer: ReturnType<typeof setInterval> | null = null;
   let isShuttingDown = false;
+  let isReconnecting = false;
   let ownerId: string | undefined;
+
+  // Observability state
+  let lastInboundAt = 0;
+  let lastReconnectAt = 0;
+  let totalReconnects = 0;
+  let lastHealthCheckWallClock = Date.now();
 
   // Avoid hammering /oauth/wstoken (auth rate limit is very low, e.g. 5/min).
   let nextAllowedWsConnectAt = 0;
 
-  // Calculate delay with exponential backoff
+  // Calculate delay with exponential backoff + jitter
   const getReconnectDelay = () => {
-    const delay = Math.min(
+    const base = Math.min(
       RECONNECT_INITIAL_DELAY * Math.pow(2, reconnectAttempts),
-      RECONNECT_MAX_DELAY
+      RECONNECT_MAX_DELAY,
     );
-    return delay;
+    // Add ±25% jitter to avoid thundering herd
+    const jitter = base * 0.25 * (Math.random() * 2 - 1);
+    return Math.max(1000, Math.floor(base + jitter));
   };
 
   // Create and setup subscription
@@ -1088,7 +1121,7 @@ export async function startRingCentralMonitor(
           const msg = String(err);
           logger.error(
             `[${account.accountId}] Failed to get current user (REST, best-effort): ${msg}. ` +
-              `Continuing without ownerId; self-message filtering may be degraded temporarily.`,
+            `Continuing without ownerId; self-message filtering may be degraded temporarily.`,
           );
           // Backoff a bit to avoid hammering
           nextAllowedWsConnectAt = Date.now() + 60_000;
@@ -1098,6 +1131,7 @@ export async function startRingCentralMonitor(
       // Handle notifications
       subscription.on(subscription.events.notification, (event: unknown) => {
         logger.debug(`WebSocket notification received: ${JSON.stringify(event)}`);
+        lastInboundAt = Date.now();
         const evt = event as RingCentralWebhookEvent;
         processWebSocketEvent({
           event: evt,
@@ -1128,9 +1162,14 @@ export async function startRingCentralMonitor(
       wsSubscription = await mgr.wsExt.subscribe(eventFilters, (event: unknown) => {
         subscription.emit(subscription.events.notification, event);
       });
-      
-      logger.info(`[${account.accountId}] RingCentral WebSocket subscription established`);
-      reconnectAttempts = 0; // Reset on success
+
+      logger.info(
+        `[${account.accountId}] RingCentral WebSocket subscription established` +
+        ` | totalReconnects=${totalReconnects}` +
+        ` | lastInboundAt=${lastInboundAt ? new Date(lastInboundAt).toISOString() : "never"}`,
+      );
+      reconnectAttempts = 0; // Reset backoff on success
+      isReconnecting = false;
 
       // Setup WebSocket close/error handlers for auto-reconnect
       const ws = mgr.wsExt.ws;
@@ -1140,8 +1179,8 @@ export async function startRingCentralMonitor(
           const closeEvent = event as { code?: number; reason?: string };
           logger.warn(
             `[${account.accountId}] WebSocket closed unexpectedly. ` +
-              `code=${closeEvent.code ?? "unknown"} reason=${closeEvent.reason ?? "none"}. ` +
-              `Scheduling reconnect...`,
+            `code=${closeEvent.code ?? "unknown"} reason=${closeEvent.reason ?? "none"}. ` +
+            `Scheduling reconnect...`,
           );
           // Clear WsManager cache to force fresh connection
           wsManagers.delete(account.accountId);
@@ -1178,11 +1217,11 @@ export async function startRingCentralMonitor(
       // If we hit auth rate limit for /oauth/wstoken, back off according to retry-after.
       const retryAfterHeader =
         typeof e?.response?.headers?.get === "function" ? e.response.headers.get("retry-after") :
-        typeof e?.response?.headers?.["retry-after"] === "string" ? e.response.headers["retry-after"] :
-        undefined;
+          typeof e?.response?.headers?.["retry-after"] === "string" ? e.response.headers["retry-after"] :
+            undefined;
       const retryAfterMs =
         typeof e?.retryAfter === "number" ? e.retryAfter :
-        (retryAfterHeader ? (parseInt(retryAfterHeader, 10) * 1000) : undefined);
+          (retryAfterHeader ? (parseInt(retryAfterHeader, 10) * 1000) : undefined);
 
       const isRateLimited = e?.message === "Request rate exceeded" || e?.response?.status === 429 ||
         errStr.includes("429") || errStr.includes("rate") || errStr.includes("Rate");
@@ -1192,21 +1231,21 @@ export async function startRingCentralMonitor(
         nextAllowedWsConnectAt = Date.now() + backoffMs;
         logger.error(
           `[${account.accountId}] WS connect failed due to rate limit (wstoken). ` +
-            `Backing off for ${Math.ceil(backoffMs / 1000)}s before retrying.`,
+          `Backing off for ${Math.ceil(backoffMs / 1000)}s before retrying.`,
         );
       }
 
       logger.error(
         `[default] WS subscription failed (NO WS push will be received until fixed). ` +
-          `accountId=${account.accountId}. ` +
-          `Reason=${e?.name ?? 'Error'}: ${e?.message ?? errStr}\n` +
-          `Where=createSubscription()->wsExt.subscribe()\n` +
-          `LikelyCause: underlying WebSocket object does not implement addEventListener (required by @rc-ex/ws), OR ws connect failed earlier and was swallowed.\n` +
-          `EventFilters=${JSON.stringify([
-            "/restapi/v1.0/glip/posts",
-            "/restapi/v1.0/glip/groups",
-          ])}\n` +
-          `Stack:\n${msg}`,
+        `accountId=${account.accountId}. ` +
+        `Reason=${e?.name ?? 'Error'}: ${e?.message ?? errStr}\n` +
+        `Where=createSubscription()->wsExt.subscribe()\n` +
+        `LikelyCause: underlying WebSocket object does not implement addEventListener (required by @rc-ex/ws), OR ws connect failed earlier and was swallowed.\n` +
+        `EventFilters=${JSON.stringify([
+          "/restapi/v1.0/glip/posts",
+          "/restapi/v1.0/glip/groups",
+        ])}\n` +
+        `Stack:\n${msg}`,
       );
       scheduleReconnect(isRateLimited);
     }
@@ -1215,25 +1254,36 @@ export async function startRingCentralMonitor(
   // Schedule reconnection with exponential backoff
   const scheduleReconnect = (isRateLimited = false) => {
     if (isShuttingDown || abortSignal.aborted) return;
-    if (reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
-      logger.error(`[${account.accountId}] Max reconnection attempts (${RECONNECT_MAX_ATTEMPTS}) reached. Giving up.`);
-      return;
-    }
+    if (isReconnecting) return; // prevent overlapping reconnect attempts
+    isReconnecting = true;
 
-    // Use longer delay if rate limited
+    // No max attempts cap -- always try to recover
     const baseDelay = isRateLimited ? RATE_LIMIT_BACKOFF : getReconnectDelay();
     const delay = Math.min(baseDelay, RECONNECT_MAX_DELAY);
     reconnectAttempts++;
-    logger.warn(`[${account.accountId}] Scheduling reconnection attempt ${reconnectAttempts}/${RECONNECT_MAX_ATTEMPTS} in ${delay}ms${isRateLimited ? " (rate limited)" : ""}...`);
+    totalReconnects++;
+    lastReconnectAt = Date.now();
+
+    logger.warn(
+      `[${account.accountId}] Scheduling reconnect #${reconnectAttempts} in ${Math.ceil(delay / 1000)}s` +
+      `${isRateLimited ? " (rate limited)" : ""}` +
+      ` | totalReconnects=${totalReconnects}` +
+      ` | lastInboundAt=${lastInboundAt ? new Date(lastInboundAt).toISOString() : "never"}`,
+    );
 
     // Clean up existing WsSubscription
     if (wsSubscription) {
-      wsSubscription.revoke().catch(() => {});
+      wsSubscription.revoke().catch(() => { });
       wsSubscription = null;
+    }
+
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout);
     }
 
     reconnectTimeout = setTimeout(() => {
       reconnectTimeout = null;
+      isReconnecting = false;
       createSubscription().catch((err) => {
         logger.error(`[${account.accountId}] Reconnection failed: ${String(err)}`);
       });
@@ -1252,18 +1302,74 @@ export async function startRingCentralMonitor(
     abortSignal,
   });
 
+  // ─── Health check watchdog ───
+  // Detects silent WS degradation (e.g. after macOS sleep/wake) by:
+  // 1. Checking timer drift to detect system sleep
+  // 2. Verifying WS readyState is still OPEN
+  // 3. Checking if inbound messages have gone stale (optional, only after first message)
+  lastHealthCheckWallClock = Date.now();
+  healthCheckTimer = setInterval(() => {
+    if (isShuttingDown || abortSignal.aborted) return;
+
+    const now = Date.now();
+    const elapsed = now - lastHealthCheckWallClock;
+    lastHealthCheckWallClock = now;
+
+    // Detect sleep/wake: if elapsed >> interval, the system likely slept
+    if (elapsed > HEALTH_CHECK_INTERVAL_MS + SLEEP_DRIFT_THRESHOLD_MS) {
+      logger.warn(
+        `[${account.accountId}] System wake detected (timer drift ${Math.round(elapsed / 1000)}s). Forcing reconnect...`,
+      );
+      wsManagers.delete(account.accountId);
+      scheduleReconnect();
+      return;
+    }
+
+    // Check WS readyState
+    const mgr = wsManagers.get(account.accountId);
+    const ws = mgr?.wsExt?.ws;
+    if (ws && ws.readyState !== 0 && ws.readyState !== 1) {
+      logger.warn(
+        `[${account.accountId}] WebSocket readyState=${ws.readyState} (not OPEN). Forcing reconnect...`,
+      );
+      wsManagers.delete(account.accountId);
+      scheduleReconnect();
+      return;
+    }
+
+    // If we've ever received inbound and it's been stale too long, force reconnect
+    if (lastInboundAt > 0 && now - lastInboundAt > INBOUND_STALE_THRESHOLD_MS) {
+      logger.warn(
+        `[${account.accountId}] No inbound for ${Math.round((now - lastInboundAt) / 1000)}s (threshold=${INBOUND_STALE_THRESHOLD_MS / 1000}s). Forcing reconnect...`,
+      );
+      lastInboundAt = 0; // Reset to prevent repeated triggers until next real inbound
+      wsManagers.delete(account.accountId);
+      scheduleReconnect();
+      return;
+    }
+  }, HEALTH_CHECK_INTERVAL_MS);
+
   // Handle abort signal
   const cleanup = () => {
     isShuttingDown = true;
-    logger.info(`[${account.accountId}] Stopping RingCentral WebSocket subscription...`);
-    
+    logger.info(
+      `[${account.accountId}] Stopping RingCentral WebSocket subscription...` +
+      ` | totalReconnects=${totalReconnects}` +
+      ` | lastInboundAt=${lastInboundAt ? new Date(lastInboundAt).toISOString() : "never"}`,
+    );
+
     stopChatCacheSync();
+
+    if (healthCheckTimer) {
+      clearInterval(healthCheckTimer);
+      healthCheckTimer = null;
+    }
 
     if (reconnectTimeout) {
       clearTimeout(reconnectTimeout);
       reconnectTimeout = null;
     }
-    
+
     if (wsSubscription) {
       wsSubscription.revoke().catch((err) => {
         logger.error(`[${account.accountId}] Failed to revoke subscription: ${String(err)}`);

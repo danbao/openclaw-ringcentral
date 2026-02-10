@@ -17,6 +17,7 @@ export type CachedChat = {
 
 type ChatCacheData = {
   updatedAt: string;
+  ownerId?: string;
   chats: CachedChat[];
 };
 
@@ -31,6 +32,7 @@ const CHAT_TYPES = ["Personal", "Direct", "Group", "Team", "Everyone"] as const;
 const CACHE_FILE = "ringcentral-chat-cache.json";
 
 let memoryCache: CachedChat[] = [];
+let cachedOwnerId: string | undefined;
 let syncContext: {
   account: ResolvedRingCentralAccount;
   workspace: string | undefined;
@@ -47,29 +49,47 @@ export function searchCachedChats(query: string): CachedChat[] {
   return memoryCache.filter((c) => (c.name || "").toLowerCase().includes(q));
 }
 
+export function findDirectChatByMember(memberId: string): CachedChat | undefined {
+  if (!cachedOwnerId) {
+    // Fallback: match any Direct chat containing memberId (less precise)
+    return memoryCache.find(
+      (c) => c.type === "Direct" && c.members?.includes(memberId),
+    );
+  }
+  // Exact match: Direct chat whose members are exactly {selfId, memberId}
+  return memoryCache.find(
+    (c) =>
+      c.type === "Direct" &&
+      c.members?.length === 2 &&
+      c.members.includes(cachedOwnerId!) &&
+      c.members.includes(memberId),
+  );
+}
+
 function resolveCachePath(workspace: string): string {
   return path.join(workspace, "memory", CACHE_FILE);
 }
 
-function readCacheFile(workspace: string, logger: ChatCacheLogger): CachedChat[] {
+function readCacheFile(workspace: string, logger: ChatCacheLogger): { chats: CachedChat[]; ownerId?: string } {
   const filePath = resolveCachePath(workspace);
   try {
     const raw = fs.readFileSync(filePath, "utf-8");
     const data = JSON.parse(raw) as ChatCacheData;
-    return data.chats ?? [];
+    return { chats: data.chats ?? [], ownerId: data.ownerId };
   } catch {
     logger.debug(`[chat-cache] No existing cache file at ${filePath}`);
-    return [];
+    return { chats: [] };
   }
 }
 
-function writeCacheFile(workspace: string, chats: CachedChat[], logger: ChatCacheLogger): void {
+function writeCacheFile(workspace: string, chats: CachedChat[], ownerId: string | undefined, logger: ChatCacheLogger): void {
   const filePath = resolveCachePath(workspace);
   const dir = path.dirname(filePath);
   try {
     fs.mkdirSync(dir, { recursive: true });
     const data: ChatCacheData = {
       updatedAt: new Date().toISOString(),
+      ownerId,
       chats,
     };
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
@@ -200,12 +220,18 @@ async function syncOnce(
 ): Promise<void> {
   logger.debug(`[chat-cache] Syncing chats for account ${account.accountId}...`);
   try {
+    // Resolve and cache ownerId for precise Direct chat matching
+    const ownerId = await resolveOwnerId(account, logger);
+    if (ownerId) {
+      cachedOwnerId = ownerId;
+    }
+
     const chats = await fetchAllChats(account, logger);
     const changed = cacheChanged(memoryCache, chats);
     memoryCache = chats;
 
     if (workspace && changed) {
-      writeCacheFile(workspace, chats, logger);
+      writeCacheFile(workspace, chats, cachedOwnerId, logger);
     }
 
     logger.info(`[chat-cache] Synced ${chats.length} chats (changed=${changed})`);
@@ -234,9 +260,13 @@ export function startChatCacheSync(params: {
 
   // Only restore from local file; no automatic API sync to avoid 429
   if (workspace) {
-    memoryCache = readCacheFile(workspace, logger);
+    const cached = readCacheFile(workspace, logger);
+    memoryCache = cached.chats;
+    if (cached.ownerId) {
+      cachedOwnerId = cached.ownerId;
+    }
     if (memoryCache.length > 0) {
-      logger.info(`[chat-cache] Restored ${memoryCache.length} chats from file cache`);
+      logger.info(`[chat-cache] Restored ${memoryCache.length} chats from file cache (ownerId=${cachedOwnerId ?? "unknown"})`);
     }
   }
 }
