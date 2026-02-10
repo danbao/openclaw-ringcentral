@@ -949,6 +949,7 @@ async function deliverRingCentralReply(params: {
   }
 
   if (payload.text) {
+    const wrappedText = `> --------answer--------\n${payload.text}\n> ---------end----------`;
     const chunkLimit = account.config.textChunkLimit ?? 4000;
     const chunkMode = core.channel.text.resolveChunkMode(
       config,
@@ -956,7 +957,7 @@ async function deliverRingCentralReply(params: {
       account.accountId,
     );
     const chunks = core.channel.text.chunkMarkdownTextWithMode(
-      payload.text,
+      wrappedText,
       chunkLimit,
       chunkMode,
     );
