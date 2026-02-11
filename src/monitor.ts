@@ -28,7 +28,55 @@ import type {
   RingCentralEventBody,
   RingCentralAttachment,
   RingCentralMention,
+  RingCentralChat,
+  RingCentralUser,
 } from "./types.js";
+
+// Cache implementations
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+const chatInfoCache = new Map<string, RingCentralChat>();
+const userInfoCache = new Map<string, RingCentralUser>();
+
+export async function getCachedChat(
+  account: ResolvedRingCentralAccount,
+  chatId: string,
+): Promise<RingCentralChat | null> {
+  const key = `${account.accountId}:${chatId}`;
+  if (chatInfoCache.has(key)) {
+    return chatInfoCache.get(key)!;
+  }
+  try {
+    const data = await getRingCentralChat({ account, chatId });
+    if (data) {
+      chatInfoCache.set(key, data);
+      setTimeout(() => chatInfoCache.delete(key), CACHE_TTL_MS);
+    }
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+export async function getCachedUser(
+  account: ResolvedRingCentralAccount,
+  userId: string,
+): Promise<RingCentralUser | null> {
+  const key = `${account.accountId}:${userId}`;
+  if (userInfoCache.has(key)) {
+    return userInfoCache.get(key)!;
+  }
+  try {
+    const data = await getRingCentralUser({ account, userId });
+    if (data) {
+      userInfoCache.set(key, data);
+      setTimeout(() => userInfoCache.delete(key), CACHE_TTL_MS);
+    }
+    return data;
+  } catch {
+    return null;
+  }
+}
 
 export type RingCentralLogger = {
   debug: (message: string) => void;
@@ -455,7 +503,7 @@ async function processMessageWithPipeline(params: {
   let chatName: string | undefined;
   let chatInfo: any | undefined;
   try {
-    chatInfo = await getRingCentralChat({ account, chatId });
+    chatInfo = await getCachedChat(account, chatId);
     chatType = chatInfo?.type ?? "Group";
     chatName = chatInfo?.name ?? undefined;
 
@@ -617,7 +665,7 @@ async function processMessageWithPipeline(params: {
           const memberNames = await Promise.all(
             memberIds.map(async (id: string) => {
               try {
-                const u = await getRingCentralUser({ account, userId: id });
+                const u = await getCachedUser(account, id);
                 return u?.firstName?.trim() || null;
               } catch {
                 return null;
