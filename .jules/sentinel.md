@@ -1,0 +1,4 @@
+## 2026-02-11 - DoS via Memory Exhaustion in File Downloads
+**Vulnerability:** The `downloadRingCentralAttachment` function in `src/api.ts` downloaded the entire file into memory using `response.arrayBuffer()` before checking if it exceeded the `maxBytes` limit. This allowed attackers to cause a Denial of Service (DoS) by sending a very large file, exhausting the server's memory.
+**Learning:** Always validate the `Content-Length` header against size limits *before* consuming the response body. Even if `Content-Length` is missing or spoofed, streaming the response and checking the size incrementally is safer than buffering the entire response.
+**Prevention:** Implement a check for `Content-Length` before calling methods like `arrayBuffer()` or `text()`. If possible, use streaming to download and count bytes, aborting if the limit is exceeded.
