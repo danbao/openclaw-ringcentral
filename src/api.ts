@@ -362,6 +362,18 @@ export async function downloadRingCentralAttachment(params: {
 
   const response = await platform.get(contentUri);
   const contentType = response.headers.get("content-type") ?? undefined;
+
+  // Security: Check Content-Length before downloading entire body
+  if (maxBytes) {
+    const contentLength = response.headers.get("content-length");
+    if (contentLength) {
+      const length = parseInt(contentLength, 10);
+      if (!isNaN(length) && length > maxBytes) {
+        throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+      }
+    }
+  }
+
   const arrayBuffer = await response.arrayBuffer();
   
   if (maxBytes && arrayBuffer.byteLength > maxBytes) {
