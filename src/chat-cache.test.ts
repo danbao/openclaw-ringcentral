@@ -96,4 +96,55 @@ describe("fetchAllChats", () => {
     expect(result.chats).toHaveLength(4);
     expect(result.chats.find(c => c.id === "chat-Direct")).toBeUndefined();
   });
+
+  it("should resolve direct chat names in batches", async () => {
+    vi.mocked(api.getCurrentRingCentralUser).mockResolvedValue({ id: "self-id" } as any);
+
+    // Return 4 direct chats
+    const directChats = Array.from({ length: 4 }, (_, i) => ({
+      id: `chat-${i}`,
+      type: "Direct",
+      members: [{ id: "self-id" }, { id: `user-${i}` }],
+    }));
+
+    vi.mocked(api.listRingCentralChats).mockImplementation(async ({ type }) => {
+      if (type && type[0] === "Direct") {
+        return directChats as any[];
+      }
+      return [];
+    });
+
+    vi.mocked(api.getRingCentralUser).mockImplementation(async ({ userId }) => {
+      await new Promise(resolve => setTimeout(resolve, 50)); // simulate network delay
+      return { firstName: "User", lastName: userId } as any;
+    });
+
+    const start = Date.now();
+    await fetchAllChats(mockAccount, mockLogger);
+    const end = Date.now();
+    const duration = end - start;
+
+    // Current implementation:
+    // 4 items.
+    // i=0: fetch, sleep(500) if i>0 (no sleep)
+    // i=1: sleep(500), fetch
+    // i=2: sleep(500), fetch
+    // i=3: sleep(500), fetch
+    // Total sleep = 1500ms.
+    // Total fetch time = 4 * 50ms = 200ms (sequential).
+    // Total approx = 1700ms.
+
+    // Optimized implementation (batch size 3):
+    // Batch 1 (0, 1, 2): fetch parallel. sleep(200) if i>0 (no sleep).
+    // Batch 2 (3): sleep(200), fetch parallel.
+    // Total sleep = 200ms.
+    // Total fetch time = 50ms + 50ms = 100ms.
+    // Total approx = 300ms.
+
+    // We assert < 1000ms to prove optimization.
+    expect(duration).toBeLessThan(1000);
+
+    // Verify all users were resolved
+    expect(api.getRingCentralUser).toHaveBeenCalledTimes(4);
+  });
 });

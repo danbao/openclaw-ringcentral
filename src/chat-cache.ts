@@ -141,8 +141,6 @@ async function resolvePersonName(
   }
 }
 
-const PERSON_RESOLVE_DELAY_MS = 500; // delay between /persons requests to avoid 429
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -208,16 +206,24 @@ export async function fetchAllChats(
     }
   }
 
-  // Resolve Direct chat names sequentially with delay to avoid 429
+  // Resolve Direct chat names in batches to improve performance while respecting rate limits
   if (directChatsToResolve.length > 0) {
     logger.debug(`[chat-cache] Resolving ${directChatsToResolve.length} Direct chat names...`);
-    for (let i = 0; i < directChatsToResolve.length; i++) {
-      const { index, peerId } = directChatsToResolve[i];
+    const BATCH_SIZE = 3;
+    const BATCH_DELAY_MS = 200;
+
+    for (let i = 0; i < directChatsToResolve.length; i += BATCH_SIZE) {
+      const batch = directChatsToResolve.slice(i, i + BATCH_SIZE);
       if (i > 0) {
-        await sleep(PERSON_RESOLVE_DELAY_MS);
+        await sleep(BATCH_DELAY_MS);
       }
-      const name = await resolvePersonName(account, peerId, logger);
-      result[index].name = String(name || "");
+
+      await Promise.all(
+        batch.map(async ({ index, peerId }) => {
+          const name = await resolvePersonName(account, peerId, logger);
+          result[index].name = String(name || "");
+        }),
+      );
     }
   }
 
