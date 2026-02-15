@@ -96,4 +96,52 @@ describe("fetchAllChats", () => {
     expect(result.chats).toHaveLength(4);
     expect(result.chats.find(c => c.id === "chat-Direct")).toBeUndefined();
   });
+
+  it("should batch resolve Direct chat names efficiently", async () => {
+    // Setup delays to verify parallelism
+    const DELAY = 100;
+    const NUM_CHATS = 5;
+
+    vi.mocked(api.getCurrentRingCentralUser).mockResolvedValue({ id: "self-id" } as any);
+
+    // Mock chats: 5 Direct chats with no name
+    vi.mocked(api.listRingCentralChats).mockImplementation(async ({ type }) => {
+      if (type && type[0] === "Direct") {
+        return Array.from({ length: NUM_CHATS }, (_, i) => ({
+          id: `chat-${i}`,
+          name: "", // missing name triggers resolution
+          type: "Direct",
+          members: [{ id: "self-id" }, { id: `peer-${i}` }]
+        })) as any[];
+      }
+      return [];
+    });
+
+    vi.mocked(api.getRingCentralUser).mockImplementation(async ({ userId }) => {
+      await new Promise((resolve) => setTimeout(resolve, DELAY));
+      const idx = userId.split("-")[1];
+      return { id: userId, firstName: "User", lastName: `peer-${idx}` } as any;
+    });
+
+    const start = Date.now();
+    const result = await fetchAllChats(mockAccount, mockLogger);
+    const end = Date.now();
+    const duration = end - start;
+
+    // Verify resolved names
+    expect(result.chats.filter(c => c.type === "Direct")).toHaveLength(NUM_CHATS);
+    // name should be "User peer-0"
+    expect(result.chats.find(c => c.id === "chat-0")?.name).toBe("User peer-0");
+
+    // Verify duration
+    // Sequential: 4 * 500 + 5 * 100 = 2500ms
+    // Batched (3, 200ms delay):
+    // Batch 1 (3 items): max(100) = 100ms
+    // Delay: 200ms
+    // Batch 2 (2 items): max(100) = 100ms
+    // Total: ~400ms + overhead
+    // We expect it to be significantly faster than 2500ms.
+    // Let's set limit to 1500ms to be safe against CI slowness, but ideally < 1000ms.
+    expect(duration).toBeLessThan(1500);
+  });
 });
