@@ -22,7 +22,7 @@ import {
   formatRcApiError,
 } from "./api.js";
 import { getRingCentralRuntime } from "./runtime.js";
-import { startChatCacheSync, stopChatCacheSync } from "./chat-cache.js";
+import { initChatCache, stopChatCacheSync } from "./chat-cache.js";
 import type {
   RingCentralWebhookEvent,
   RingCentralEventBody,
@@ -1348,7 +1348,7 @@ export async function startRingCentralMonitor(
 
   // Start chat cache sync
   const workspace = account.config.workspace ?? (config.agents as any)?.defaults?.workspace;
-  startChatCacheSync({
+  await initChatCache({
     account,
     workspace: workspace as string | undefined,
     logger,
