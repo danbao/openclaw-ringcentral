@@ -362,14 +362,73 @@ export async function downloadRingCentralAttachment(params: {
 
   const response = await platform.get(contentUri);
   const contentType = response.headers.get("content-type") ?? undefined;
-  const arrayBuffer = await response.arrayBuffer();
-  
-  if (maxBytes && arrayBuffer.byteLength > maxBytes) {
-    throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+
+  // Check Content-Length header first if available (fast fail)
+  const contentLengthStr = response.headers.get("content-length");
+  if (contentLengthStr && maxBytes) {
+    const contentLength = parseInt(contentLengthStr, 10);
+    if (!isNaN(contentLength) && contentLength > maxBytes) {
+      throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+    }
+  }
+
+  // Stream the response body
+  const body = response.body;
+  if (!body) {
+    // If no body, empty buffer
+    return { buffer: Buffer.from([]), contentType };
+  }
+
+  const chunks: Buffer[] = [];
+  let bytesRead = 0;
+
+  // Handle Node.js Readable stream (node-fetch)
+  // Check for 'on' or 'read' methods typical of Node streams
+  if (
+    typeof (body as any).on === "function" ||
+    typeof (body as any).read === "function"
+  ) {
+    for await (const chunk of body as any) {
+      bytesRead += chunk.length;
+      if (maxBytes && bytesRead > maxBytes) {
+        // Try to destroy the stream to stop download
+        if (typeof (body as any).destroy === "function") {
+          (body as any).destroy();
+        }
+        throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+      }
+      chunks.push(Buffer.from(chunk));
+    }
+  }
+  // Handle Web Streams (native fetch)
+  else if (typeof (body as any).getReader === "function") {
+    const reader = (body as ReadableStream<Uint8Array>).getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          bytesRead += value.length;
+          if (maxBytes && bytesRead > maxBytes) {
+            // Cancel the stream
+            await reader.cancel();
+            throw new Error(
+              `RingCentral attachment exceeds max bytes (${maxBytes})`,
+            );
+          }
+          chunks.push(Buffer.from(value));
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  } else {
+    // Fallback if body is not a recognizable stream (unlikely in supported envs)
+    throw new Error("Response body stream not supported");
   }
 
   return {
-    buffer: Buffer.from(arrayBuffer),
+    buffer: Buffer.concat(chunks),
     contentType,
   };
 }
