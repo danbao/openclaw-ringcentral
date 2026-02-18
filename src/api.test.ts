@@ -1,9 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { Readable } from "stream";
 import type { ResolvedRingCentralAccount } from "./accounts.js";
 import {
   extractRcApiError,
   formatRcApiError,
+  downloadRingCentralAttachment,
 } from "./api.js";
+
+import { getRingCentralPlatform } from "./auth.js";
 
 // Mock the auth module
 vi.mock("./auth.js", () => ({
@@ -434,5 +438,87 @@ describe("probeRingCentral", () => {
   it("should be exported", async () => {
     const { probeRingCentral } = await import("./api.js");
     expect(typeof probeRingCentral).toBe("function");
+  });
+});
+
+describe("downloadRingCentralAttachment Security", () => {
+  const mockAccount = { accountId: "test" } as any;
+
+  it("should detect maxBytes violation (baseline)", async () => {
+    const mockPlatform = {
+      get: vi.fn().mockResolvedValue({
+        headers: { get: () => null },
+        arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(2000)),
+      }),
+    };
+    (getRingCentralPlatform as any).mockResolvedValue(mockPlatform);
+
+    await expect(downloadRingCentralAttachment({
+      account: mockAccount,
+      contentUri: "http://test",
+      maxBytes: 1000,
+    })).rejects.toThrow(/exceeds max bytes/);
+  });
+
+  it("should fail fast using Content-Length header", async () => {
+    const mockPlatform = {
+      get: vi.fn().mockResolvedValue({
+        headers: {
+          get: (name: string) => (name.toLowerCase() === "content-length" ? "5000" : null),
+        },
+        // Should NOT call arrayBuffer if header check fails
+        arrayBuffer: vi.fn(),
+        body: new Readable({ read() { this.push(null); } }),
+      }),
+    };
+    (getRingCentralPlatform as any).mockResolvedValue(mockPlatform);
+
+    await expect(downloadRingCentralAttachment({
+      account: mockAccount,
+      contentUri: "http://test-header",
+      maxBytes: 1000,
+    })).rejects.toThrow(/exceeds max bytes/);
+  });
+
+  it("should stop reading stream when maxBytes is exceeded", async () => {
+    const CHUNK_SIZE = 1000;
+    const TOTAL_CHUNKS = 10; // 10000 bytes total
+    const MAX_BYTES = 1500; // Limit 1.5KB
+
+    let chunksRead = 0;
+    const stream = new Readable({
+      read() {
+        if (chunksRead >= TOTAL_CHUNKS) {
+          this.push(null);
+        } else {
+          chunksRead++;
+          this.push(Buffer.alloc(CHUNK_SIZE));
+        }
+      }
+    });
+
+    const mockPlatform = {
+      get: vi.fn().mockResolvedValue({
+        headers: { get: () => null },
+        // Mock current implementation behavior for fallback testing if needed
+        arrayBuffer: vi.fn().mockImplementation(async () => {
+           let total = 0;
+           for await (const chunk of stream) {
+             total += chunk.length;
+           }
+           return new ArrayBuffer(total);
+        }),
+        body: stream,
+      }),
+    };
+    (getRingCentralPlatform as any).mockResolvedValue(mockPlatform);
+
+    await expect(downloadRingCentralAttachment({
+      account: mockAccount,
+      contentUri: "http://test-stream",
+      maxBytes: MAX_BYTES,
+    })).rejects.toThrow(/exceeds max bytes/);
+
+    expect(chunksRead).toBeLessThan(TOTAL_CHUNKS);
   });
 });
