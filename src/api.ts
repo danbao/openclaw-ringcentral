@@ -362,14 +362,58 @@ export async function downloadRingCentralAttachment(params: {
 
   const response = await platform.get(contentUri);
   const contentType = response.headers.get("content-type") ?? undefined;
-  const arrayBuffer = await response.arrayBuffer();
-  
-  if (maxBytes && arrayBuffer.byteLength > maxBytes) {
-    throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+
+  // Use streaming to prevent memory exhaustion for large files
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  const body = response.body;
+
+  if (body && typeof (body as any).getReader === "function") {
+    // Web Streams (native fetch)
+    const reader = (body as ReadableStream<Uint8Array>).getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          totalBytes += value.byteLength;
+          if (maxBytes && totalBytes > maxBytes) {
+            await reader.cancel();
+            throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+          }
+          chunks.push(value);
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  } else if (body && (typeof (body as any)[Symbol.asyncIterator] === "function" || typeof (body as any).on === "function")) {
+    // Node Streams (node-fetch) or async iterable
+    for await (const chunk of (body as AsyncIterable<any>)) {
+      const u8 = chunk instanceof Uint8Array ? chunk : Buffer.from(chunk);
+      totalBytes += u8.byteLength;
+      if (maxBytes && totalBytes > maxBytes) {
+        if (typeof (body as any).destroy === "function") {
+          (body as any).destroy();
+        }
+        throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+      }
+      chunks.push(u8);
+    }
+  } else {
+    // Fallback for unknown body type
+    const arrayBuffer = await response.arrayBuffer();
+    if (maxBytes && arrayBuffer.byteLength > maxBytes) {
+      throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+    }
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      contentType,
+    };
   }
 
   return {
-    buffer: Buffer.from(arrayBuffer),
+    buffer: Buffer.concat(chunks),
     contentType,
   };
 }
