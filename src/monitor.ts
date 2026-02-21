@@ -28,7 +28,57 @@ import type {
   RingCentralEventBody,
   RingCentralAttachment,
   RingCentralMention,
+  RingCentralChat,
+  RingCentralUser,
 } from "./types.js";
+
+// Cache settings
+const CHAT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const USER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// In-memory caches
+const chatCache = new Map<string, { data: RingCentralChat; expiresAt: number }>();
+const userCache = new Map<string, { data: RingCentralUser; expiresAt: number }>();
+
+export async function getCachedChat(params: {
+  account: ResolvedRingCentralAccount;
+  chatId: string;
+}): Promise<RingCentralChat | null> {
+  const { account, chatId } = params;
+  const now = Date.now();
+  const key = `${account.accountId}:${chatId}`;
+
+  const cached = chatCache.get(key);
+  if (cached && cached.expiresAt > now) {
+    return cached.data;
+  }
+
+  const chat = await getRingCentralChat(params);
+  if (chat) {
+    chatCache.set(key, { data: chat, expiresAt: now + CHAT_CACHE_TTL });
+  }
+  return chat;
+}
+
+export async function getCachedUser(params: {
+  account: ResolvedRingCentralAccount;
+  userId: string;
+}): Promise<RingCentralUser | null> {
+  const { account, userId } = params;
+  const now = Date.now();
+  const key = `${account.accountId}:${userId}`;
+
+  const cached = userCache.get(key);
+  if (cached && cached.expiresAt > now) {
+    return cached.data;
+  }
+
+  const user = await getRingCentralUser(params);
+  if (user) {
+    userCache.set(key, { data: user, expiresAt: now + USER_CACHE_TTL });
+  }
+  return user;
+}
 
 export type RingCentralLogger = {
   debug: (message: string) => void;
@@ -455,7 +505,7 @@ async function processMessageWithPipeline(params: {
   let chatName: string | undefined;
   let chatInfo: any | undefined;
   try {
-    chatInfo = await getRingCentralChat({ account, chatId });
+    chatInfo = await getCachedChat({ account, chatId });
     chatType = chatInfo?.type ?? "Group";
     chatName = chatInfo?.name ?? undefined;
 
@@ -617,7 +667,7 @@ async function processMessageWithPipeline(params: {
           const memberNames = await Promise.all(
             memberIds.map(async (id: string) => {
               try {
-                const u = await getRingCentralUser({ account, userId: id });
+                const u = await getCachedUser({ account, userId: id });
                 return u?.firstName?.trim() || null;
               } catch {
                 return null;
