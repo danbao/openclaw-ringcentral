@@ -362,14 +362,71 @@ export async function downloadRingCentralAttachment(params: {
 
   const response = await platform.get(contentUri);
   const contentType = response.headers.get("content-type") ?? undefined;
-  const arrayBuffer = await response.arrayBuffer();
-  
-  if (maxBytes && arrayBuffer.byteLength > maxBytes) {
-    throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+
+  const chunks: Uint8Array[] = [];
+  let bytesRead = 0;
+
+  if (response.body && typeof (response.body as any).getReader === "function") {
+    // Web Stream (ReadableStream)
+    const reader = (response.body as any).getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          bytesRead += value.byteLength;
+          if (maxBytes && bytesRead > maxBytes) {
+            // Abort stream
+            await reader.cancel();
+            throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+          }
+          chunks.push(value);
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  } else if (response.body && typeof (response.body as any).on === "function") {
+    // Node Stream (Readable)
+    await new Promise<void>((resolve, reject) => {
+      const stream = response.body as any; // Node stream
+
+      const onData = (chunk: Uint8Array) => {
+        bytesRead += chunk.byteLength;
+        if (maxBytes && bytesRead > maxBytes) {
+          stream.destroy(); // Stop reading
+          reject(new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`));
+          return;
+        }
+        chunks.push(chunk);
+      };
+
+      const onEnd = () => {
+        resolve();
+      };
+
+      const onError = (err: any) => {
+        reject(err);
+      };
+
+      stream.on("data", onData);
+      stream.once("end", onEnd);
+      stream.once("error", onError);
+    });
+  } else {
+    // Fallback to arrayBuffer if no stream interface detected
+    const arrayBuffer = await response.arrayBuffer();
+    if (maxBytes && arrayBuffer.byteLength > maxBytes) {
+      throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+    }
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      contentType,
+    };
   }
 
   return {
-    buffer: Buffer.from(arrayBuffer),
+    buffer: Buffer.concat(chunks),
     contentType,
   };
 }
