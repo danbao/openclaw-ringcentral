@@ -362,14 +362,68 @@ export async function downloadRingCentralAttachment(params: {
 
   const response = await platform.get(contentUri);
   const contentType = response.headers.get("content-type") ?? undefined;
-  const arrayBuffer = await response.arrayBuffer();
-  
-  if (maxBytes && arrayBuffer.byteLength > maxBytes) {
-    throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+  const body = response.body;
+
+  if (!body) {
+    return { buffer: Buffer.alloc(0), contentType };
+  }
+
+  const chunks: Uint8Array[] = [];
+  let bytesRead = 0;
+
+  // Handle Web Streams (standard fetch)
+  if (typeof (body as any).getReader === "function") {
+    const reader = (body as any).getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          bytesRead += value.length;
+          if (maxBytes && bytesRead > maxBytes) {
+            await reader.cancel();
+            throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+          }
+          chunks.push(value);
+        }
+      }
+    } finally {
+      // Release lock if stream is still locked (e.g. error but not cancelled)
+      // Note: If we called cancel(), the lock is released when the cancel promise resolves
+      // but releaseLock() is safe to call if the reader is no longer active.
+      // However, if we threw an error, we might still have the lock.
+      // Basic safeguard:
+      try { reader.releaseLock(); } catch { /* ignore if already released */ }
+    }
+  }
+  // Handle Node.js Streams / Async Iterables (node-fetch)
+  else if (typeof (body as any)[Symbol.asyncIterator] === "function" || typeof (body as any).on === "function") {
+    for await (const chunk of (body as any)) {
+      const bufferChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bytesRead += bufferChunk.length;
+      if (maxBytes && bytesRead > maxBytes) {
+        if (typeof (body as any).destroy === "function") {
+          (body as any).destroy();
+        }
+        throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+      }
+      chunks.push(bufferChunk);
+    }
+  }
+  // Fallback to arrayBuffer if no stream interface found
+  else {
+    const arrayBuffer = await response.arrayBuffer();
+    if (maxBytes && arrayBuffer.byteLength > maxBytes) {
+      throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+    }
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      contentType,
+    };
   }
 
   return {
-    buffer: Buffer.from(arrayBuffer),
+    buffer: Buffer.concat(chunks),
     contentType,
   };
 }
