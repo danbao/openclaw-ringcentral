@@ -96,4 +96,37 @@ describe("fetchAllChats", () => {
     expect(result.chats).toHaveLength(4);
     expect(result.chats.find(c => c.id === "chat-Direct")).toBeUndefined();
   });
+
+  it("should resolve many Direct chat names efficiently (batching)", async () => {
+    // This test verifies that we don't regress to sequential 500ms delays
+    const NUM_CHATS = 5;
+    const API_DELAY = 10;
+
+    vi.mocked(api.getCurrentRingCentralUser).mockResolvedValue({ id: "self-id" } as any);
+
+    vi.mocked(api.listRingCentralChats).mockImplementation(async ({ type }) => {
+      if (type && type[0] === "Direct") {
+        return Array.from({ length: NUM_CHATS }).map((_, i) => ({
+          id: `chat-${i}`,
+          type: "Direct",
+          members: [{ id: "self-id" }, { id: `peer-${i}` }],
+          name: "", // empty name triggers resolution
+        })) as any[];
+      }
+      return [];
+    });
+
+    vi.mocked(api.getRingCentralUser).mockImplementation(async ({ userId }) => {
+      await new Promise((resolve) => setTimeout(resolve, API_DELAY));
+      return { id: userId, firstName: "User", lastName: userId } as any;
+    });
+
+    const start = Date.now();
+    await fetchAllChats(mockAccount, mockLogger);
+    const duration = Date.now() - start;
+
+    // Previous implementation: ~2050ms for 5 chats
+    // Optimized implementation: ~220ms for 5 chats
+    expect(duration).toBeLessThan(1000);
+  });
 });
