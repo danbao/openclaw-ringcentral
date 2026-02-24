@@ -1,37 +1,79 @@
 import { describe, expect, it } from "vitest";
-import { redactSensitive } from "./monitor.js";
+import { summarizeChatInfo, summarizeEvent } from "./monitor.js";
 
-describe("redactSensitive", () => {
-  it("redacts sensitive keys in flat object", () => {
-    const input = { text: "secret", name: "John", other: "ok" };
-    expect(redactSensitive(input)).toEqual({ text: "[REDACTED]", name: "[REDACTED]", other: "ok" });
+describe("summarizeChatInfo", () => {
+  it("extracts only safe fields from chat object", () => {
+    const chat = {
+      id: "chat-123",
+      type: "Group",
+      name: "Secret Team Name",
+      description: "Sensitive description",
+      members: ["user-1", "user-2", "user-3"],
+      status: "Active",
+    };
+    const result = JSON.parse(summarizeChatInfo(chat));
+    expect(result).toEqual({
+      id: "chat-123",
+      type: "Group",
+      memberCount: 3,
+      status: "Active",
+    });
+    expect(result.name).toBeUndefined();
+    expect(result.description).toBeUndefined();
   });
 
-  it("redacts sensitive keys in nested object", () => {
-    const input = { user: { firstName: "Jane", lastName: "Doe", id: "123" } };
-    expect(redactSensitive(input)).toEqual({ user: { firstName: "[REDACTED]", lastName: "[REDACTED]", id: "123" } });
+  it("handles null input", () => {
+    expect(summarizeChatInfo(null)).toBe("null");
   });
 
-  it("redacts sensitive keys in arrays", () => {
-    const input = [{ email: "test@example.com" }, { id: "456" }];
-    expect(redactSensitive(input)).toEqual([{ email: "[REDACTED]" }, { id: "456" }]);
+  it("handles missing fields gracefully", () => {
+    const result = JSON.parse(summarizeChatInfo({ id: "x" }));
+    expect(result).toEqual({ id: "x", type: null, memberCount: null, status: null });
+  });
+});
+
+describe("summarizeEvent", () => {
+  it("extracts only safe fields from WebSocket event", () => {
+    const event = {
+      uuid: "uuid-123",
+      event: "/restapi/v1.0/glip/posts",
+      subscriptionId: "sub-456",
+      timestamp: "2026-02-24T00:00:00Z",
+      ownerId: "owner-789",
+      body: {
+        id: "post-1",
+        groupId: "group-1",
+        type: "TextMessage",
+        text: "This is a secret message",
+        creatorId: "user-1",
+        eventType: "PostAdded",
+        mentions: [{ id: "m1", name: "John Doe" }],
+      },
+    };
+    const result = JSON.parse(summarizeEvent(event));
+    expect(result).toEqual({
+      event: "/restapi/v1.0/glip/posts",
+      subscriptionId: "sub-456",
+      body: {
+        id: "post-1",
+        groupId: "group-1",
+        type: "TextMessage",
+        eventType: "PostAdded",
+        creatorId: "user-1",
+      },
+    });
+    expect(result.body.text).toBeUndefined();
+    expect(result.body.mentions).toBeUndefined();
+    expect(result.uuid).toBeUndefined();
+    expect(result.ownerId).toBeUndefined();
   });
 
-  it("handles circular references", () => {
-    const input: any = { id: "1" };
-    input.self = input;
-    const result = redactSensitive(input);
-    expect(result.id).toBe("1");
-    expect(result.self).toBe("[Circular]");
+  it("handles null input", () => {
+    expect(summarizeEvent(null)).toBe("null");
   });
 
-  it("handles null and undefined", () => {
-    expect(redactSensitive(null)).toBeNull();
-    expect(redactSensitive(undefined)).toBeUndefined();
-  });
-
-  it("handles case-insensitive keys", () => {
-    const input = { FirstName: "John", Email: "john@example.com" };
-    expect(redactSensitive(input)).toEqual({ FirstName: "[REDACTED]", Email: "[REDACTED]" });
+  it("handles event without body", () => {
+    const result = JSON.parse(summarizeEvent({ event: "/test" }));
+    expect(result).toEqual({ event: "/test", subscriptionId: null, body: null });
   });
 });

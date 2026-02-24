@@ -228,43 +228,34 @@ export function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9-_]/g, "_");
 }
 
-export function redactSensitive(obj: any, seen = new WeakSet()): any {
-  if (obj === null || typeof obj !== "object") {
-    return obj;
-  }
-  if (seen.has(obj)) {
-    return "[Circular]";
-  }
-  seen.add(obj);
+/** @internal Exported for testing only. */
+export function summarizeChatInfo(chat: unknown): string {
+  if (!chat || typeof chat !== "object") return "null";
+  const c = chat as Record<string, unknown>;
+  return JSON.stringify({
+    id: c.id ?? null,
+    type: c.type ?? null,
+    memberCount: Array.isArray(c.members) ? c.members.length : null,
+    status: c.status ?? null,
+  });
+}
 
-  if (Array.isArray(obj)) {
-    return obj.map((item) => redactSensitive(item, seen));
-  }
-
-  const redacted: any = {};
-  for (const key of Object.keys(obj)) {
-    const lowerKey = key.toLowerCase();
-    if (
-      [
-        "text",
-        "name",
-        "description",
-        "contenturi",
-        "email",
-        "jwt",
-        "clientsecret",
-        "firstname",
-        "lastname",
-        "access_token",
-        "refreshtoken",
-      ].includes(lowerKey)
-    ) {
-      redacted[key] = "[REDACTED]";
-    } else {
-      redacted[key] = redactSensitive(obj[key], seen);
-    }
-  }
-  return redacted;
+/** @internal Exported for testing only. */
+export function summarizeEvent(event: unknown): string {
+  if (!event || typeof event !== "object") return "null";
+  const e = event as Record<string, unknown>;
+  const body = (e.body && typeof e.body === "object") ? e.body as Record<string, unknown> : null;
+  return JSON.stringify({
+    event: e.event ?? null,
+    subscriptionId: e.subscriptionId ?? null,
+    body: body ? {
+      id: body.id ?? null,
+      groupId: body.groupId ?? null,
+      type: body.type ?? null,
+      eventType: body.eventType ?? null,
+      creatorId: body.creatorId ?? null,
+    } : null,
+  });
 }
 
 /**
@@ -500,7 +491,7 @@ async function processMessageWithPipeline(params: {
 
     // OpenClaw logger respects configured log level - debug output controlled by openclaw config
     logger.debug(
-      `[${account.accountId}] chatInfo: ${JSON.stringify(redactSensitive(chatInfo))}`,
+      `[${account.accountId}] chatInfo: ${summarizeChatInfo(chatInfo)}`,
     );
   } catch (err) {
     // If we can't fetch chat info, assume it's a group.
@@ -1220,7 +1211,7 @@ export async function startRingCentralMonitor(
 
       // Handle notifications
       subscription.on(subscription.events.notification, (event: unknown) => {
-        logger.debug(`WebSocket notification received: ${JSON.stringify(redactSensitive(event))}`);
+        logger.debug(`WebSocket notification received: ${summarizeEvent(event)}`);
         lastInboundAt = Date.now();
         const evt = event as RingCentralWebhookEvent;
         processWebSocketEvent({
