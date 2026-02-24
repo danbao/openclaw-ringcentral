@@ -33,7 +33,92 @@ import type {
   RingCentralEventBody,
   RingCentralAttachment,
   RingCentralMention,
+  RingCentralChat,
+  RingCentralUser,
 } from "./types.js";
+
+// TTL cache with lazy eviction and max size bound.
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_MAX_SIZE = 500;
+
+type CacheEntry<T> = { value: T; expiresAt: number };
+
+/** @internal Exported for testing only. */
+export class TtlCache<T> {
+  private readonly map = new Map<string, CacheEntry<T>>();
+  private readonly maxSize: number;
+  private readonly ttlMs: number;
+
+  constructor(opts: { maxSize: number; ttlMs: number }) {
+    this.maxSize = opts.maxSize;
+    this.ttlMs = opts.ttlMs;
+  }
+
+  get(key: string): T | undefined {
+    const entry = this.map.get(key);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      this.map.delete(key);
+      return undefined;
+    }
+    return entry.value;
+  }
+
+  set(key: string, value: T): void {
+    if (this.map.size >= this.maxSize) {
+      // Evict expired entries first
+      const now = Date.now();
+      for (const [k, v] of this.map) {
+        if (now > v.expiresAt) this.map.delete(k);
+      }
+      // If still at capacity, evict oldest entry
+      if (this.map.size >= this.maxSize) {
+        const firstKey = this.map.keys().next().value;
+        if (firstKey !== undefined) this.map.delete(firstKey);
+      }
+    }
+    this.map.set(key, { value, expiresAt: Date.now() + this.ttlMs });
+  }
+
+  clear(): void {
+    this.map.clear();
+  }
+}
+
+const chatInfoCache = new TtlCache<RingCentralChat>({ maxSize: CACHE_MAX_SIZE, ttlMs: CACHE_TTL_MS });
+const userInfoCache = new TtlCache<RingCentralUser>({ maxSize: CACHE_MAX_SIZE, ttlMs: CACHE_TTL_MS });
+
+async function getCachedChat(
+  account: ResolvedRingCentralAccount,
+  chatId: string,
+): Promise<RingCentralChat | null> {
+  const key = `${account.accountId}:${chatId}`;
+  const cached = chatInfoCache.get(key);
+  if (cached) return cached;
+  try {
+    const data = await getRingCentralChat({ account, chatId });
+    if (data) chatInfoCache.set(key, data);
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function getCachedUser(
+  account: ResolvedRingCentralAccount,
+  userId: string,
+): Promise<RingCentralUser | null> {
+  const key = `${account.accountId}:${userId}`;
+  const cached = userInfoCache.get(key);
+  if (cached) return cached;
+  try {
+    const data = await getRingCentralUser({ account, userId });
+    if (data) userInfoCache.set(key, data);
+    return data;
+  } catch {
+    return null;
+  }
+}
 
 export type RingCentralLogger = {
   debug: (message: string) => void;
@@ -506,7 +591,7 @@ async function processMessageWithPipeline(params: {
   let chatName: string | undefined;
   let chatInfo: any | undefined;
   try {
-    chatInfo = await getRingCentralChat({ account, chatId });
+    chatInfo = await getCachedChat(account, chatId);
     chatType = chatInfo?.type ?? "Group";
     chatName = chatInfo?.name ?? undefined;
 
@@ -679,7 +764,7 @@ async function processMessageWithPipeline(params: {
           const memberNames = await Promise.all(
             memberIds.map(async (id: string) => {
               try {
-                const u = await getRingCentralUser({ account, userId: id });
+                const u = await getCachedUser(account, id);
                 return u?.firstName?.trim() || null;
               } catch {
                 return null;
