@@ -32,46 +32,83 @@ import type {
   RingCentralUser,
 } from "./types.js";
 
-// Cache implementations
+// TTL cache with lazy eviction and max size bound.
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_MAX_SIZE = 500;
 
-const chatInfoCache = new Map<string, RingCentralChat>();
-const userInfoCache = new Map<string, RingCentralUser>();
+type CacheEntry<T> = { value: T; expiresAt: number };
 
-export async function getCachedChat(
+/** @internal Exported for testing only. */
+export class TtlCache<T> {
+  private readonly map = new Map<string, CacheEntry<T>>();
+  private readonly maxSize: number;
+  private readonly ttlMs: number;
+
+  constructor(opts: { maxSize: number; ttlMs: number }) {
+    this.maxSize = opts.maxSize;
+    this.ttlMs = opts.ttlMs;
+  }
+
+  get(key: string): T | undefined {
+    const entry = this.map.get(key);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      this.map.delete(key);
+      return undefined;
+    }
+    return entry.value;
+  }
+
+  set(key: string, value: T): void {
+    if (this.map.size >= this.maxSize) {
+      // Evict expired entries first
+      const now = Date.now();
+      for (const [k, v] of this.map) {
+        if (now > v.expiresAt) this.map.delete(k);
+      }
+      // If still at capacity, evict oldest entry
+      if (this.map.size >= this.maxSize) {
+        const firstKey = this.map.keys().next().value;
+        if (firstKey !== undefined) this.map.delete(firstKey);
+      }
+    }
+    this.map.set(key, { value, expiresAt: Date.now() + this.ttlMs });
+  }
+
+  clear(): void {
+    this.map.clear();
+  }
+}
+
+const chatInfoCache = new TtlCache<RingCentralChat>({ maxSize: CACHE_MAX_SIZE, ttlMs: CACHE_TTL_MS });
+const userInfoCache = new TtlCache<RingCentralUser>({ maxSize: CACHE_MAX_SIZE, ttlMs: CACHE_TTL_MS });
+
+async function getCachedChat(
   account: ResolvedRingCentralAccount,
   chatId: string,
 ): Promise<RingCentralChat | null> {
   const key = `${account.accountId}:${chatId}`;
-  if (chatInfoCache.has(key)) {
-    return chatInfoCache.get(key)!;
-  }
+  const cached = chatInfoCache.get(key);
+  if (cached) return cached;
   try {
     const data = await getRingCentralChat({ account, chatId });
-    if (data) {
-      chatInfoCache.set(key, data);
-      setTimeout(() => chatInfoCache.delete(key), CACHE_TTL_MS);
-    }
+    if (data) chatInfoCache.set(key, data);
     return data;
   } catch {
     return null;
   }
 }
 
-export async function getCachedUser(
+async function getCachedUser(
   account: ResolvedRingCentralAccount,
   userId: string,
 ): Promise<RingCentralUser | null> {
   const key = `${account.accountId}:${userId}`;
-  if (userInfoCache.has(key)) {
-    return userInfoCache.get(key)!;
-  }
+  const cached = userInfoCache.get(key);
+  if (cached) return cached;
   try {
     const data = await getRingCentralUser({ account, userId });
-    if (data) {
-      userInfoCache.set(key, data);
-      setTimeout(() => userInfoCache.delete(key), CACHE_TTL_MS);
-    }
+    if (data) userInfoCache.set(key, data);
     return data;
   } catch {
     return null;

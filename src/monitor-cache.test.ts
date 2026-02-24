@@ -1,35 +1,8 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { getCachedChat, getCachedUser } from "./monitor.js";
-import * as api from "./api.js";
-import type { ResolvedRingCentralAccount } from "./accounts.js";
+import { TtlCache } from "./monitor.js";
 
-// Mock api.js
-vi.mock("./api.js", () => ({
-  getRingCentralChat: vi.fn(),
-  getRingCentralUser: vi.fn(),
-}));
-
-// Mock fs to avoid issues with other imports in monitor.ts
-vi.mock("fs", async () => ({
-  promises: {
-    mkdir: vi.fn(),
-    access: vi.fn(),
-    appendFile: vi.fn(),
-  }
-}));
-
-describe("monitor cache", () => {
-  const mockAccount: ResolvedRingCentralAccount = {
-    accountId: "acc1",
-    server: "https://platform.devtest.ringcentral.com",
-    clientId: "client1",
-    clientSecret: "secret1",
-    jwt: "jwt1",
-    config: {},
-  };
-
+describe("TtlCache", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
     vi.useFakeTimers();
   });
 
@@ -37,102 +10,86 @@ describe("monitor cache", () => {
     vi.useRealTimers();
   });
 
-  describe("getCachedChat", () => {
-    it("should call API only once for repeated calls", async () => {
-      const chatId = "chat_test_1";
-      const mockChat = { id: chatId, type: "Group" };
-      vi.mocked(api.getRingCentralChat).mockResolvedValue(mockChat as any);
-
-      // First call
-      const result1 = await getCachedChat(mockAccount, chatId);
-      expect(result1).toEqual(mockChat);
-      expect(api.getRingCentralChat).toHaveBeenCalledTimes(1);
-
-      // Second call (should be cached)
-      const result2 = await getCachedChat(mockAccount, chatId);
-      expect(result2).toEqual(mockChat);
-      expect(api.getRingCentralChat).toHaveBeenCalledTimes(1);
-    });
-
-    it("should expire cache after TTL", async () => {
-      const chatId = "chat_test_ttl";
-      const mockChat = { id: chatId, type: "Group" };
-      vi.mocked(api.getRingCentralChat).mockResolvedValue(mockChat as any);
-
-      await getCachedChat(mockAccount, chatId);
-      expect(api.getRingCentralChat).toHaveBeenCalledTimes(1);
-
-      // Fast forward time > 5 minutes
-      vi.advanceTimersByTime(5 * 60 * 1000 + 100);
-
-      // Should call API again
-      await getCachedChat(mockAccount, chatId);
-      expect(api.getRingCentralChat).toHaveBeenCalledTimes(2);
-    });
-
-    it("should separate cache by accountId", async () => {
-      const chatId = "chat_test_acc";
-      const mockChat1 = { id: chatId, type: "Group", name: "Account1" };
-      const mockChat2 = { id: chatId, type: "Group", name: "Account2" };
-
-      vi.mocked(api.getRingCentralChat)
-        .mockResolvedValueOnce(mockChat1 as any)
-        .mockResolvedValueOnce(mockChat2 as any);
-
-      const acc2 = { ...mockAccount, accountId: "acc2" };
-
-      await getCachedChat(mockAccount, chatId);
-      await getCachedChat(acc2, chatId);
-
-      expect(api.getRingCentralChat).toHaveBeenCalledTimes(2);
-    });
-
-    it("should return null on API failure and NOT cache null", async () => {
-      const chatId = "chat_test_error";
-      vi.mocked(api.getRingCentralChat).mockRejectedValue(new Error("API Error"));
-
-      const result1 = await getCachedChat(mockAccount, chatId);
-      expect(result1).toBeNull();
-
-      // Should try again (not cached)
-      const result2 = await getCachedChat(mockAccount, chatId);
-      expect(result2).toBeNull();
-
-      expect(api.getRingCentralChat).toHaveBeenCalledTimes(2);
-    });
+  it("returns undefined for missing keys", () => {
+    const cache = new TtlCache<string>({ maxSize: 10, ttlMs: 60_000 });
+    expect(cache.get("missing")).toBeUndefined();
   });
 
-  describe("getCachedUser", () => {
-     it("should call API only once for repeated calls", async () => {
-      const userId = "user_test_1";
-      const mockUser = { id: userId, firstName: "Alice" };
-      vi.mocked(api.getRingCentralUser).mockResolvedValue(mockUser as any);
+  it("stores and retrieves values", () => {
+    const cache = new TtlCache<string>({ maxSize: 10, ttlMs: 60_000 });
+    cache.set("a", "hello");
+    expect(cache.get("a")).toBe("hello");
+  });
 
-      // First call
-      const result1 = await getCachedUser(mockAccount, userId);
-      expect(result1).toEqual(mockUser);
-      expect(api.getRingCentralUser).toHaveBeenCalledTimes(1);
+  it("expires entries after TTL", () => {
+    const cache = new TtlCache<string>({ maxSize: 10, ttlMs: 5_000 });
+    cache.set("a", "hello");
+    expect(cache.get("a")).toBe("hello");
 
-      // Second call
-      const result2 = await getCachedUser(mockAccount, userId);
-      expect(result2).toEqual(mockUser);
-      expect(api.getRingCentralUser).toHaveBeenCalledTimes(1);
-    });
+    vi.advanceTimersByTime(5_001);
+    expect(cache.get("a")).toBeUndefined();
+  });
 
-    it("should expire cache after TTL", async () => {
-      const userId = "user_test_ttl";
-      const mockUser = { id: userId, firstName: "Bob" };
-      vi.mocked(api.getRingCentralUser).mockResolvedValue(mockUser as any);
+  it("does not expire entries before TTL", () => {
+    const cache = new TtlCache<string>({ maxSize: 10, ttlMs: 5_000 });
+    cache.set("a", "hello");
 
-      await getCachedUser(mockAccount, userId);
-      expect(api.getRingCentralUser).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(4_999);
+    expect(cache.get("a")).toBe("hello");
+  });
 
-      // Fast forward time > 5 minutes
-      vi.advanceTimersByTime(5 * 60 * 1000 + 100);
+  it("evicts oldest entry when at max size", () => {
+    const cache = new TtlCache<string>({ maxSize: 2, ttlMs: 60_000 });
+    cache.set("a", "1");
+    cache.set("b", "2");
+    cache.set("c", "3"); // should evict "a"
 
-      // Should call API again
-      await getCachedUser(mockAccount, userId);
-      expect(api.getRingCentralUser).toHaveBeenCalledTimes(2);
-    });
+    expect(cache.get("a")).toBeUndefined();
+    expect(cache.get("b")).toBe("2");
+    expect(cache.get("c")).toBe("3");
+  });
+
+  it("evicts expired entries before falling back to oldest", () => {
+    const cache = new TtlCache<string>({ maxSize: 2, ttlMs: 5_000 });
+    cache.set("a", "1");
+
+    vi.advanceTimersByTime(5_001); // "a" is now expired
+
+    cache.set("b", "2");
+    cache.set("c", "3"); // eviction pass should remove expired "a", not "b"
+
+    expect(cache.get("a")).toBeUndefined();
+    expect(cache.get("b")).toBe("2");
+    expect(cache.get("c")).toBe("3");
+  });
+
+  it("separates keys correctly", () => {
+    const cache = new TtlCache<string>({ maxSize: 10, ttlMs: 60_000 });
+    cache.set("acc1:chat1", "data1");
+    cache.set("acc2:chat1", "data2");
+
+    expect(cache.get("acc1:chat1")).toBe("data1");
+    expect(cache.get("acc2:chat1")).toBe("data2");
+  });
+
+  it("clear removes all entries", () => {
+    const cache = new TtlCache<string>({ maxSize: 10, ttlMs: 60_000 });
+    cache.set("a", "1");
+    cache.set("b", "2");
+    cache.clear();
+
+    expect(cache.get("a")).toBeUndefined();
+    expect(cache.get("b")).toBeUndefined();
+  });
+
+  it("overwriting a key refreshes TTL", () => {
+    const cache = new TtlCache<string>({ maxSize: 10, ttlMs: 5_000 });
+    cache.set("a", "v1");
+
+    vi.advanceTimersByTime(3_000);
+    cache.set("a", "v2"); // refresh
+
+    vi.advanceTimersByTime(3_000); // 6s from first set, 3s from refresh
+    expect(cache.get("a")).toBe("v2");
   });
 });
