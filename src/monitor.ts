@@ -364,6 +364,36 @@ export function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9-_]/g, "_");
 }
 
+/** @internal Exported for testing only. */
+export function summarizeChatInfo(chat: unknown): string {
+  if (!chat || typeof chat !== "object") return "null";
+  const c = chat as Record<string, unknown>;
+  return JSON.stringify({
+    id: c.id ?? null,
+    type: c.type ?? null,
+    memberCount: Array.isArray(c.members) ? c.members.length : null,
+    status: c.status ?? null,
+  });
+}
+
+/** @internal Exported for testing only. */
+export function summarizeEvent(event: unknown): string {
+  if (!event || typeof event !== "object") return "null";
+  const e = event as Record<string, unknown>;
+  const body = (e.body && typeof e.body === "object") ? e.body as Record<string, unknown> : null;
+  return JSON.stringify({
+    event: e.event ?? null,
+    subscriptionId: e.subscriptionId ?? null,
+    body: body ? {
+      id: body.id ?? null,
+      groupId: body.groupId ?? null,
+      type: body.type ?? null,
+      eventType: body.eventType ?? null,
+      creatorId: body.creatorId ?? null,
+    } : null,
+  });
+}
+
 /**
  * Save group chat message to workspace memory file.
  * File path: ${workspace}/memory/chats/YYYY-MM-DD/${chatId}.md
@@ -597,9 +627,7 @@ async function processMessageWithPipeline(params: {
 
     // OpenClaw logger respects configured log level - debug output controlled by openclaw config
     logger.debug(
-      `[${account.accountId}] chatInfo: id=${chatId} type=${chatInfo?.type ?? null} ` +
-      `name=${JSON.stringify(chatInfo?.name ?? null)} members=${JSON.stringify(chatInfo?.members ?? null)} ` +
-      `description=${JSON.stringify(chatInfo?.description ?? null)}`,
+      `[${account.accountId}] chatInfo: ${summarizeChatInfo(chatInfo)}`,
     );
   } catch (err) {
     // If we can't fetch chat info, assume it's a group.
@@ -1344,7 +1372,7 @@ export async function startRingCentralMonitor(
 
       // Handle notifications
       subscription.on(subscription.events.notification, (event: unknown) => {
-        logger.debug(`WebSocket notification received: ${JSON.stringify(event)}`);
+        logger.debug(`WebSocket notification received: ${summarizeEvent(event)}`);
         lastInboundAt = Date.now();
         const evt = event as RingCentralWebhookEvent;
         processWebSocketEvent({
