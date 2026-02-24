@@ -705,13 +705,30 @@ async function processMessageWithPipeline(params: {
     logger.error(`[${account.accountId}] getRingCentralChat failed: ${String(err)}`);
   }
 
-  // If chatInfo lookup failed (throws OR returned null/invalid), fall back to DM to preserve expected routing.
-  // Misclassifying a DM as group would prevent dm routing to the lead agent.
+  // If chatInfo lookup failed (throws OR returned null/invalid), DO NOT blindly fall back to DM.
+  // That would misclassify group/team chats as DM and cause unintended replies.
+  // Only allow DM fallback for explicitly bound chats.
   if (!chatInfoLookupOk) {
-    chatType = "Personal";
-    logger.warn(
-      `[${account.accountId}] chatInfo missing/invalid; fallback chatType=Personal for routing (chatId=${chatId})`,
+    const boundDmChats = new Set(
+      [
+        // Back-compat: treat the configured owner chatId as DM-bound.
+        (account.config as any).ownerChatId,
+        // Optional explicit list.
+        ...(((account.config as any).dmChats ?? []) as string[]),
+      ].filter(Boolean) as string[],
     );
+
+    if (boundDmChats.has(String(chatId))) {
+      chatType = "Personal";
+      logger.warn(
+        `[${account.accountId}] chatInfo missing/invalid; fallback chatType=Personal for bound DM (chatId=${chatId})`,
+      );
+    } else {
+      // Keep default "Group" classification.
+      logger.warn(
+        `[${account.accountId}] chatInfo missing/invalid; keeping chatType=Group to avoid unintended routing (chatId=${chatId})`,
+      );
+    }
   }
 
   // Personal, PersonalChat, Direct are all DM types
