@@ -804,7 +804,7 @@ async function processMessageWithPipeline(params: {
 
   logger.debug(`[${account.accountId}] Chat type: ${chatType}, isGroup: ${isGroup}`);
   logger.debug(
-    `[${account.accountId}] resolvedRoute: peerKind=${peerKind} peerId=${routePeerId} -> agentId=${(route as any)?.agentId ?? "(default)"}`,
+    `[${account.accountId}] resolvedRoute: channel=ringcentral accountId=${account.accountId} peerKind=${peerKind} peerId=${routePeerId} -> agentId=${(route as any)?.agentId ?? "(default)"} matchedBy=${(route as any)?.matchedBy ?? "unknown"}`,
   );
 
   // In selfOnly mode, only allow "Personal" chat (conversation with yourself)
