@@ -399,16 +399,29 @@ export function summarizeChatInfo(chat: unknown): string {
 export function summarizeEvent(event: unknown): string {
   if (!event || typeof event !== "object") return "null";
   const e = event as Record<string, unknown>;
-  const body = (e.body && typeof e.body === "object") ? e.body as Record<string, unknown> : null;
+  const body = (e.body && typeof e.body === "object") ? (e.body as Record<string, unknown>) : null;
+
+  // Shape fingerprint for diagnostics: log key sets (no sensitive values).
+  const bodyKeys = body ? Object.keys(body).sort() : [];
+  const bodyKeySig = bodyKeys.length > 0 ? bodyKeys.join(",") : "";
+
   return JSON.stringify({
     event: e.event ?? null,
     subscriptionId: e.subscriptionId ?? null,
+    shape: {
+      hasBody: Boolean(body),
+      bodyKeys: bodyKeySig || null,
+    },
     body: body ? {
       id: body.id ?? null,
       groupId: body.groupId ?? null,
       type: body.type ?? null,
       eventType: body.eventType ?? null,
       creatorId: body.creatorId ?? null,
+      // Prefer not to log text contents, only presence.
+      hasText: Boolean((body as any).text),
+      attachmentCount: Array.isArray((body as any).attachments) ? ((body as any).attachments as any[]).length : null,
+      mentionCount: Array.isArray((body as any).mentions) ? ((body as any).mentions as any[]).length : null,
     } : null,
   });
 }
