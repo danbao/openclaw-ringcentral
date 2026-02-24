@@ -362,16 +362,42 @@ export async function downloadRingCentralAttachment(params: {
 
   const response = await platform.get(contentUri);
   const contentType = response.headers.get("content-type") ?? undefined;
-  const arrayBuffer = await response.arrayBuffer();
-  
-  if (maxBytes && arrayBuffer.byteLength > maxBytes) {
-    throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+
+  if (maxBytes) {
+    const lengthHeader = response.headers.get("content-length");
+    if (lengthHeader) {
+      const length = Number(lengthHeader);
+      if (Number.isFinite(length) && length > maxBytes) {
+        throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+      }
+    }
   }
 
-  return {
-    buffer: Buffer.from(arrayBuffer),
-    contentType,
-  };
+  if (!maxBytes || !response.body) {
+    const arrayBuffer = await response.arrayBuffer();
+    return { buffer: Buffer.from(arrayBuffer), contentType };
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.length;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return { buffer: Buffer.concat(chunks, total), contentType };
 }
 
 // Adaptive Cards API
