@@ -1469,6 +1469,17 @@ export async function startRingCentralMonitor(
         return;
       }
 
+      // Check for missing WebSocket Subscriptions permission (SUB-528)
+      const isMissingWsPerm = errStr.includes("SUB-528") || errStr.includes("SubscriptionWebSocket");
+      if (isMissingWsPerm) {
+        logger.error(
+          `[${account.accountId}] RingCentral app is missing the "WebSocket Subscriptions" permission. ` +
+          `Go to https://developers.ringcentral.com → your app → Settings → "App Permissions" and enable "WebSocket Subscriptions", ` +
+          `then re-authorize. No WebSocket push will be received until this is fixed.`,
+        );
+        return;
+      }
+
       // Legacy fallback: detect rate-limit from errors not wrapped by ensureWsConnected
       // (e.g. from wsExt.subscribe or other SDK calls).
       const retryAfterHeader =
