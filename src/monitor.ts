@@ -157,6 +157,12 @@ function createLogger(core: RingCentralCoreRuntime): RingCentralLogger {
 const recentlySentMessageIds = new Set<string>();
 const MESSAGE_ID_TTL = 60000; // 60 seconds
 
+// Dedup inbound messages to prevent duplicate processing during WS reconnect overlap.
+// Keyed by messageId; TTL long enough to cover reconnect window.
+const INBOUND_DEDUP_TTL_MS = 2 * 60_000; // 2 minutes
+const INBOUND_DEDUP_MAX_SIZE = 500;
+const inboundDedupCache = new TtlCache<true>({ maxSize: INBOUND_DEDUP_MAX_SIZE, ttlMs: INBOUND_DEDUP_TTL_MS });
+
 // Reconnection settings
 const RECONNECT_INITIAL_DELAY = 5000; // 5 seconds
 const RECONNECT_MAX_DELAY = 300000; // 5 minutes
@@ -598,6 +604,16 @@ async function processMessageWithPipeline(params: {
   if (messageId && isOwnSentMessage(messageId)) {
     logVerbose(core, `skip own sent message: ${messageId}`);
     return;
+  }
+
+  // Check 1b: Inbound dedup — skip if we already processed this messageId
+  // Prevents duplicate "thinking" + reply during WS reconnect overlap
+  if (messageId) {
+    if (inboundDedupCache.get(messageId)) {
+      logVerbose(core, `dedup: skip already-processed message: ${messageId}`);
+      return;
+    }
+    inboundDedupCache.set(messageId, true);
   }
 
   // Check 2: Structural loop guard — filter out bot-generated markers
