@@ -121,6 +121,30 @@
       "label": "Use Adaptive Cards",
       "help": "Format messages with code blocks as Adaptive Cards for better rendering",
       "advanced": true
+    },
+    "actions": {
+      "label": "Actions",
+      "help": "Toggle which action categories the agent can use"
+    },
+    "actions.messages": {
+      "label": "Messages",
+      "help": "Allow agent to read, edit, and delete messages"
+    },
+    "actions.channelInfo": {
+      "label": "Channel Info",
+      "help": "Allow agent to retrieve chat/channel information"
+    },
+    "actions.tasks": {
+      "label": "Tasks",
+      "help": "Allow agent to list, create, update, and complete tasks"
+    },
+    "actions.events": {
+      "label": "Events",
+      "help": "Allow agent to list, create, update, and delete events"
+    },
+    "actions.notes": {
+      "label": "Notes",
+      "help": "Allow agent to list, create, update, and publish notes"
     }
   },
   "configSchema": {
@@ -289,6 +313,32 @@
       "workspace": {
         "type": "string",
         "description": "Path to workspace for storing data"
+      },
+      "actions": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "messages": {
+            "type": "boolean",
+            "description": "Allow agent to read, edit, and delete messages (default: true)"
+          },
+          "channelInfo": {
+            "type": "boolean",
+            "description": "Allow agent to retrieve chat/channel information (default: true)"
+          },
+          "tasks": {
+            "type": "boolean",
+            "description": "Allow agent to list, create, update, and complete tasks (default: true)"
+          },
+          "events": {
+            "type": "boolean",
+            "description": "Allow agent to list, create, update, and delete events (default: true)"
+          },
+          "notes": {
+            "type": "boolean",
+            "description": "Allow agent to list, create, update, and publish notes (default: true)"
+          }
+        }
       },
       "accounts": {
         "type": "object",
