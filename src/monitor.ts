@@ -64,6 +64,22 @@ const HEALTH_CHECK_INTERVAL_MS = 30_000; // check every 30s
 const INBOUND_STALE_THRESHOLD_MS = 5 * 60_000; // 5 minutes no inbound → force reconnect
 const SLEEP_DRIFT_THRESHOLD_MS = 10_000; // >10s timer drift → system likely slept
 
+/**
+ * Thrown when /oauth/wstoken returns 429 (rate limited).
+ * Callers can catch this to distinguish rate-limit pauses from other failures.
+ */
+export class WsTokenRateLimitError extends Error {
+  public readonly retryAfterMs: number;
+  constructor(retryAfterMs: number, accountId: string) {
+    super(
+      `[${accountId}] /oauth/wstoken rate limited (429). ` +
+      `Requests paused for ${Math.ceil(retryAfterMs / 1000)}s.`,
+    );
+    this.name = "WsTokenRateLimitError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
 // WebSocket singleton per account to avoid hammering /oauth/wstoken.
 // @ringcentral/subscriptions + @rc-ex/ws can swallow initial connect errors and
 // repeated new Subscriptions()/newWsExtension() will trigger new wstoken calls.
@@ -131,7 +147,37 @@ async function ensureWsConnected(
 
   mgr.connectPromise = (async () => {
     logger.debug(`[${account.accountId}] Forcing WS connect() (singleton)...`);
-    await mgr.wsExt.connect(false);
+    try {
+      await mgr.wsExt.connect(false);
+    } catch (err) {
+      // Detect 429 rate limit from /oauth/wstoken and throw a dedicated error.
+      const e = err as any;
+      const errStr = String(err);
+      const is429 =
+        e?.response?.status === 429 ||
+        e?.message === "Request rate exceeded" ||
+        errStr.includes("429") ||
+        errStr.includes("rate") ||
+        errStr.includes("Rate");
+      if (is429) {
+        const retryAfterHeader =
+          typeof e?.response?.headers?.get === "function"
+            ? e.response.headers.get("retry-after")
+            : typeof e?.response?.headers?.["retry-after"] === "string"
+              ? e.response.headers["retry-after"]
+              : undefined;
+        const retryAfterMs =
+          typeof e?.retryAfter === "number"
+            ? e.retryAfter
+            : retryAfterHeader
+              ? parseInt(retryAfterHeader, 10) * 1000
+              : 60_000;
+        const backoffMs =
+          Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? retryAfterMs : 60_000;
+        throw new WsTokenRateLimitError(backoffMs, account.accountId);
+      }
+      throw err; // re-throw non-429 errors as-is
+    }
     mgr.lastConnectAt = Date.now();
     if (!mgr.wsExt.ws) {
       throw new Error("WS connect() returned but wsExt.ws is still undefined");
@@ -1256,6 +1302,19 @@ export async function startRingCentralMonitor(
       }
 
     } catch (err) {
+      // ── 429 rate-limit from /oauth/wstoken ──
+      // WsTokenRateLimitError is thrown by ensureWsConnected() when the
+      // underlying wsExt.connect() gets a 429.
+      if (err instanceof WsTokenRateLimitError) {
+        const backoffMs = err.retryAfterMs;
+        nextAllowedWsConnectAt = Date.now() + backoffMs;
+        // Clear WsManager cache so next attempt creates a fresh connection.
+        wsManagers.delete(account.accountId);
+        logger.error(err.message);
+        scheduleReconnect(true);
+        throw err; // propagate so caller knows requests are paused
+      }
+
       const e = err as any;
       const errStr = String(err);
       const msg = e?.stack ? String(e.stack) : errStr;
@@ -1267,7 +1326,8 @@ export async function startRingCentralMonitor(
         return;
       }
 
-      // If we hit auth rate limit for /oauth/wstoken, back off according to retry-after.
+      // Legacy fallback: detect rate-limit from errors not wrapped by ensureWsConnected
+      // (e.g. from wsExt.subscribe or other SDK calls).
       const retryAfterHeader =
         typeof e?.response?.headers?.get === "function" ? e.response.headers.get("retry-after") :
           typeof e?.response?.headers?.["retry-after"] === "string" ? e.response.headers["retry-after"] :
@@ -1344,7 +1404,20 @@ export async function startRingCentralMonitor(
   };
 
   // Initial connection
-  await createSubscription();
+  try {
+    await createSubscription();
+  } catch (err) {
+    if (err instanceof WsTokenRateLimitError) {
+      // 429 on initial connect – reconnect timer is already scheduled.
+      // Log prominently so the operator knows the monitor is paused.
+      logger.error(
+        `[${account.accountId}] Monitor paused due to /oauth/wstoken 429. ` +
+        `Will auto-retry in ${Math.ceil(err.retryAfterMs / 1000)}s.`,
+      );
+    } else {
+      throw err; // unexpected errors still propagate
+    }
+  }
 
   // Start chat cache sync
   const workspace = account.config.workspace ?? (config.agents as any)?.defaults?.workspace;
