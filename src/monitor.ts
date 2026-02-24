@@ -1536,7 +1536,7 @@ export async function startRingCentralMonitor(
 
   // Start chat cache sync
   const workspace = account.config.workspace ?? (config.agents as any)?.defaults?.workspace;
-  startChatCacheSync({
+  await startChatCacheSync({
     account,
     workspace: workspace as string | undefined,
     logger,

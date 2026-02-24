@@ -71,10 +71,10 @@ function resolveCachePath(workspace: string): string {
   return path.join(workspace, "memory", CACHE_FILE);
 }
 
-function readCacheFile(workspace: string, logger: ChatCacheLogger): { chats: CachedChat[]; ownerId?: string } {
+async function readCacheFile(workspace: string, logger: ChatCacheLogger): Promise<{ chats: CachedChat[]; ownerId?: string }> {
   const filePath = resolveCachePath(workspace);
   try {
-    const raw = fs.readFileSync(filePath, "utf-8");
+    const raw = await fs.promises.readFile(filePath, "utf-8");
     const data = JSON.parse(raw) as ChatCacheData;
     return { chats: data.chats ?? [], ownerId: data.ownerId };
   } catch {
@@ -83,17 +83,17 @@ function readCacheFile(workspace: string, logger: ChatCacheLogger): { chats: Cac
   }
 }
 
-function writeCacheFile(workspace: string, chats: CachedChat[], ownerId: string | undefined, logger: ChatCacheLogger): void {
+async function writeCacheFile(workspace: string, chats: CachedChat[], ownerId: string | undefined, logger: ChatCacheLogger): Promise<void> {
   const filePath = resolveCachePath(workspace);
   const dir = path.dirname(filePath);
   try {
-    fs.mkdirSync(dir, { recursive: true });
+    await fs.promises.mkdir(dir, { recursive: true });
     const data: ChatCacheData = {
       updatedAt: new Date().toISOString(),
       ownerId,
       chats,
     };
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+    await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
     logger.debug(`[chat-cache] Wrote ${chats.length} chats to ${filePath}`);
   } catch (err) {
     logger.error(`[chat-cache] Failed to write cache: ${String(err)}`);
@@ -140,8 +140,6 @@ async function resolvePersonName(
     return personId;
   }
 }
-
-const PERSON_RESOLVE_DELAY_MS = 500; // delay between /persons requests to avoid 429
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -208,16 +206,24 @@ export async function fetchAllChats(
     }
   }
 
-  // Resolve Direct chat names sequentially with delay to avoid 429
+  // Resolve Direct chat names in batches to balance speed and rate limits
   if (directChatsToResolve.length > 0) {
     logger.debug(`[chat-cache] Resolving ${directChatsToResolve.length} Direct chat names...`);
-    for (let i = 0; i < directChatsToResolve.length; i++) {
-      const { index, peerId } = directChatsToResolve[i];
+
+    // Process in small batches to avoid 429 but improve over sequential
+    const BATCH_SIZE = 3;
+    const BATCH_DELAY_MS = 200;
+
+    for (let i = 0; i < directChatsToResolve.length; i += BATCH_SIZE) {
       if (i > 0) {
-        await sleep(PERSON_RESOLVE_DELAY_MS);
+        await sleep(BATCH_DELAY_MS);
       }
-      const name = await resolvePersonName(account, peerId, logger);
-      result[index].name = String(name || "");
+
+      const batch = directChatsToResolve.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(async ({ index, peerId }) => {
+        const name = await resolvePersonName(account, peerId, logger);
+        result[index].name = String(name || "");
+      }));
     }
   }
 
@@ -240,7 +246,7 @@ async function syncOnce(
     memoryCache = chats;
 
     if (workspace && changed) {
-      writeCacheFile(workspace, chats, cachedOwnerId, logger);
+      await writeCacheFile(workspace, chats, cachedOwnerId, logger);
     }
 
     logger.info(`[chat-cache] Synced ${chats.length} chats (changed=${changed})`);
@@ -258,18 +264,18 @@ export async function refreshChatCache(): Promise<{ count: number }> {
   return { count: memoryCache.length };
 }
 
-export function startChatCacheSync(params: {
+export async function startChatCacheSync(params: {
   account: ResolvedRingCentralAccount;
   workspace: string | undefined;
   logger: ChatCacheLogger;
   abortSignal: AbortSignal;
-}): void {
+}): Promise<void> {
   const { account, workspace, logger } = params;
   syncContext = { account, workspace, logger };
 
   // Only restore from local file; no automatic API sync to avoid 429
   if (workspace) {
-    const cached = readCacheFile(workspace, logger);
+    const cached = await readCacheFile(workspace, logger);
     memoryCache = cached.chats;
     if (cached.ownerId) {
       cachedOwnerId = cached.ownerId;
