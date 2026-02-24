@@ -607,35 +607,23 @@ async function processMessageWithPipeline(params: {
   const senderId = eventBody.creatorId ?? "";
 
   // Some WS notifications only include post id/groupId without `text`.
-  // In that case, fetch the full post content before routing.
+  // Fetch the full post content before routing (only for PostAdded events).
   let fullEventBody = eventBody;
-  if (!fullEventBody.text && fullEventBody.id) {
+  if (!fullEventBody.text && fullEventBody.id && fullEventBody.eventType === "PostAdded") {
     try {
-      const platform = runtime?.sdk?.platform?.();
+      const mgr = wsManagers.get(account.accountId);
+      const platform = mgr?.sdk?.platform();
       if (!platform) {
         logger.warn(`[${account.accountId}] Enrich skipped: sdk/platform not ready (postId=${fullEventBody.id})`);
       } else {
         const r = await platform.get(`/restapi/v1.0/glip/posts/${fullEventBody.id}`);
         const post = await r.json();
-        // Merge: prefer fetched fields.
         fullEventBody = { ...fullEventBody, ...post };
-        logger.debug(`[${account.accountId}] Enriched post ${fullEventBody.id} via REST (missing text in WS event)`);
+        logger.debug(`[${account.accountId}] Enriched post ${fullEventBody.id} via REST`);
       }
     } catch (e) {
-      logger.warn(`[${account.accountId}] Failed to enrich post ${fullEventBody.id} via REST: ${String(e)}`);
+      logger.warn(`[${account.accountId}] Failed to enrich post ${fullEventBody.id}: ${String(e)}`);
     }
-  }
-
-  // Early gate: only process enabled chats.
-  // - Always allow bound DM chats (configured via channels.ringcentral.dmChats in openclaw.json)
-  // - For group/team chats, only process when groups[chatId].enabled === true
-  const enabledGroups = (account.config.groups ?? {}) as Record<string, any>;
-  const dmChats = new Set([...(account.config as any).dmChats ?? []].map(String));
-  const isBoundDmChat = dmChats.has(String(chatId));
-  const groupEnabled = Boolean(enabledGroups[String(chatId)]?.enabled);
-  if (!isBoundDmChat && !groupEnabled) {
-    // Hard ignore to avoid noise and unintended processing.
-    return;
   }
 
   const messageText = (fullEventBody.text ?? "").trim();
@@ -697,50 +685,20 @@ async function processMessageWithPipeline(params: {
   logger.debug(`[${account.accountId}] Message passed selfOnly check`);
 
   // Fetch chat info to determine type
-  // NOTE: If chatInfo can't be fetched, we must avoid misclassifying a DM as Group.
-  // In particular, RC can sometimes fail chat lookup transiently while WS events still arrive.
   let chatType = "Group";
   let chatName: string | undefined;
   let chatInfo: any | undefined;
-  let chatInfoLookupOk = false;
   try {
     chatInfo = await getCachedChat(account, chatId);
-    chatInfoLookupOk = Boolean(chatInfo && (chatInfo as any).type);
     chatType = chatInfo?.type ?? "Group";
     chatName = chatInfo?.name ?? undefined;
 
-    // OpenClaw logger respects configured log level - debug output controlled by openclaw config
     logger.debug(
       `[${account.accountId}] chatInfo: ${summarizeChatInfo(chatInfo)}`,
     );
   } catch (err) {
+    // If we can't fetch chat info, assume it's a group (safer: triggers allowlist check).
     logger.error(`[${account.accountId}] getRingCentralChat failed: ${String(err)}`);
-  }
-
-  // If chatInfo lookup failed (throws OR returned null/invalid), DO NOT blindly fall back to DM.
-  // That would misclassify group/team chats as DM and cause unintended replies.
-  // Only allow DM fallback for explicitly bound chats.
-  if (!chatInfoLookupOk) {
-    const boundDmChats = new Set(
-      [
-        // Back-compat: treat the configured owner chatId as DM-bound.
-        (account.config as any).ownerChatId,
-        // Optional explicit list.
-        ...(((account.config as any).dmChats ?? []) as string[]),
-      ].filter(Boolean) as string[],
-    );
-
-    if (boundDmChats.has(String(chatId))) {
-      chatType = "Personal";
-      logger.warn(
-        `[${account.accountId}] chatInfo missing/invalid; fallback chatType=Personal for bound DM (chatId=${chatId})`,
-      );
-    } else {
-      // Keep default "Group" classification.
-      logger.warn(
-        `[${account.accountId}] chatInfo missing/invalid; keeping chatType=Group to avoid unintended routing (chatId=${chatId})`,
-      );
-    }
   }
 
   // Personal, PersonalChat, Direct are all DM types
