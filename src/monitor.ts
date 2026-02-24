@@ -194,6 +194,7 @@ type WsManager = {
   wsExt: WebSocketExtension;
   connectPromise?: Promise<void>;
   lastConnectAt?: number;
+  subscribed?: boolean; // true once wsExt.subscribe() has been called
 };
 
 const wsManagers = new Map<string, WsManager>();
@@ -1321,6 +1322,14 @@ export async function startRingCentralMonitor(
   logger.info(`[${account.accountId}] Starting RingCentral WebSocket subscription...`);
 
   const mgr = await getOrCreateWsManager(account, logger);
+
+  // Guard: if this WsManager already has an active subscription, skip.
+  // The framework's auto-restart may call startRingCentralMonitor multiple
+  // times; we must not create duplicate subscriptions on the same wsExt.
+  if (mgr.subscribed) {
+    logger.info(`[${account.accountId}] WS subscription already active, skipping duplicate start`);
+    return () => {}; // no-op cleanup; the original cleanup owns the lifecycle
+  }
   await ensureWsConnected(mgr, account, logger);
 
   // Resolve ownerId from REST if not configured
@@ -1364,6 +1373,7 @@ export async function startRingCentralMonitor(
 
   // Subscribe once — autoRecover will restore the subscription on reconnect
   const wsSubscription = await mgr.wsExt.subscribe(eventFilters, handleNotification);
+  mgr.subscribed = true;
 
   logger.info(
     `[${account.accountId}] RingCentral WebSocket subscription established` +
@@ -1474,6 +1484,7 @@ export async function startRingCentralMonitor(
     }
 
     // Revoke subscription + close WS + stop autoRecover interval
+    mgr.subscribed = false;
     mgr.wsExt.revoke().catch((err: unknown) => {
       logger.error(`[${account.accountId}] Failed to revoke WS extension: ${String(err)}`);
     });
