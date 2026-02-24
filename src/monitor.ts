@@ -782,16 +782,17 @@ async function processMessageWithPipeline(params: {
     : "";
 
   // Map RingCentral chat types to openclaw peerKind:
-  // - Personal/Direct -> "dm" (direct message)
+  // - Personal/Direct -> "direct" (direct message)
   // - Group -> "group" (small group chat, 3-16 people)
   // - Team -> "channel" (named team chat, similar to Slack channel)
-  const peerKind: "dm" | "group" | "channel" = isGroup
+  const peerKind: "direct" | "group" | "channel" = isGroup
     ? chatType === "Team"
       ? "channel"
       : "group"
-    : "dm";
+    : "direct";
 
   const routePeerId = String(isGroup ? chatId : (dmPeerUserId || chatId));
+  // NOTE: OpenClaw normalizes peer.kind: (dm|direct)->direct
   const route = core.channel.routing.resolveAgentRoute({
     cfg: config,
     channel: "ringcentral",
@@ -804,7 +805,7 @@ async function processMessageWithPipeline(params: {
 
   logger.debug(`[${account.accountId}] Chat type: ${chatType}, isGroup: ${isGroup}`);
   logger.debug(
-    `[${account.accountId}] resolvedRoute: channel=ringcentral accountId=${account.accountId} peerKind=${peerKind} peerId=${routePeerId} -> agentId=${(route as any)?.agentId ?? "(default)"} matchedBy=${(route as any)?.matchedBy ?? "unknown"}`,
+    `[${account.accountId}] resolvedRoute: channel=ringcentral accountId=${account.accountId} peerKind=${peerKind} peerId=${routePeerId} bindings=${Array.isArray((config as any)?.bindings) ? (config as any).bindings.length : 0} -> agentId=${(route as any)?.agentId ?? "(default)"} matchedBy=${(route as any)?.matchedBy ?? "unknown"}`,
   );
 
   // In selfOnly mode, only allow "Personal" chat (conversation with yourself)
