@@ -1192,6 +1192,14 @@ async function processMessageWithPipeline(params: {
   }
 }
 
+export function sanitizeAttachmentFilename(name: string): string {
+  // Replace unsafe chars (including / and \) with underscore.
+  // We explicitly disallow everything except alphanumeric, dot, dash, underscore.
+  const safe = name.replace(/[^a-zA-Z0-9-_\.]/g, "_");
+  // Prevent multiple dots which could form ".."
+  return safe.replace(/\.\.+/g, "_");
+}
+
 async function downloadAttachment(
   attachment: RingCentralAttachment,
   account: ResolvedRingCentralAccount,
@@ -1207,7 +1215,7 @@ async function downloadAttachment(
     downloaded.contentType ?? attachment.contentType,
     "inbound",
     maxBytes,
-    attachment.name,
+    attachment.name ? sanitizeAttachmentFilename(attachment.name) : undefined,
   );
   return { path: saved.path, contentType: saved.contentType };
 }

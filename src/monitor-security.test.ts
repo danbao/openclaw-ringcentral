@@ -1,5 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { summarizeChatInfo, summarizeEvent } from "./monitor.js";
+import { sanitizeAttachmentFilename, summarizeChatInfo, summarizeEvent } from "./monitor.js";
+
+describe("sanitizeAttachmentFilename", () => {
+  it("allows safe filenames", () => {
+    expect(sanitizeAttachmentFilename("image.png")).toBe("image.png");
+    expect(sanitizeAttachmentFilename("document-v1.pdf")).toBe("document-v1.pdf");
+    expect(sanitizeAttachmentFilename("my_file.txt")).toBe("my_file.txt");
+  });
+
+  it("replaces unsafe characters", () => {
+    expect(sanitizeAttachmentFilename("foo/bar.txt")).toBe("foo_bar.txt");
+    expect(sanitizeAttachmentFilename("foo\\bar.txt")).toBe("foo_bar.txt");
+    expect(sanitizeAttachmentFilename("file with spaces.txt")).toBe("file_with_spaces.txt");
+    expect(sanitizeAttachmentFilename("foo*bar.txt")).toBe("foo_bar.txt");
+  });
+
+  it("prevents path traversal via ..", () => {
+    expect(sanitizeAttachmentFilename("../etc/passwd")).toBe("__etc_passwd");
+    expect(sanitizeAttachmentFilename("..\\windows\\system32")).toBe("__windows_system32");
+    expect(sanitizeAttachmentFilename("foo/../bar")).toBe("foo___bar");
+  });
+
+  it("handles multiple dots safely", () => {
+    expect(sanitizeAttachmentFilename("foo..bar")).toBe("foo_bar");
+    expect(sanitizeAttachmentFilename(".../test")).toBe("__test");
+  });
+});
 
 describe("summarizeChatInfo", () => {
   it("extracts only safe fields from chat object", () => {
