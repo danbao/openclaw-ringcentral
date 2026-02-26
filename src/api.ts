@@ -357,7 +357,9 @@ export async function downloadRingCentralAttachment(params: {
   contentUri: string;
   maxBytes?: number;
 }): Promise<{ buffer: Buffer; contentType?: string }> {
-  const { account, contentUri, maxBytes } = params;
+  const { account, contentUri, maxBytes: providedMaxBytes } = params;
+  // Default to 50MB if no limit is provided to prevent memory exhaustion
+  const maxBytes = providedMaxBytes ?? 50 * 1024 * 1024;
   const platform = await getRingCentralPlatform(account);
 
   const response = await platform.get(contentUri);
