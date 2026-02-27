@@ -864,7 +864,7 @@ async function processMessageWithPipeline(params: {
             To: `ringcentral:${chatId}`,
             OriginatingChannel: "ringcentral",
             OriginatingTo: `ringcentral:${chatId}`,
-            ChatType: peerKind === "direct" ? "direct" : peerKind,
+            ChatType: peerKind,
             AccountId: route.accountId,
             SessionKey: route.sessionKey,
             ConversationLabel: metaLabel,
