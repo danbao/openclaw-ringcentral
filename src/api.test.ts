@@ -289,6 +289,50 @@ describe("downloadRingCentralAttachment", () => {
     expect(result.buffer.length).toBe(5);
     expect(result.contentType).toBe("image/png");
   });
+
+  it("rejects when default limit (50MB) is exceeded without explicit maxBytes", async () => {
+    const { getRingCentralPlatform } = await import("./auth.js");
+    const { downloadRingCentralAttachment } = await import("./api.js");
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+        controller.close();
+      },
+    });
+    const response = new Response(body, {
+      status: 200,
+      headers: {
+        "content-length": String(50 * 1024 * 1024 + 1),
+        "content-type": "application/octet-stream",
+      },
+    });
+    vi.mocked(getRingCentralPlatform).mockResolvedValue({ get: vi.fn().mockResolvedValue(response) } as any);
+
+    await expect(
+      downloadRingCentralAttachment({ account: mockAccount, contentUri: "/media/large" }),
+    ).rejects.toThrow(/max bytes/i);
+  });
+
+  it("downloads successfully within default limit without explicit maxBytes", async () => {
+    const { getRingCentralPlatform } = await import("./auth.js");
+    const { downloadRingCentralAttachment } = await import("./api.js");
+    const data = new Uint8Array([1, 2, 3, 4, 5]);
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(data);
+        controller.close();
+      },
+    });
+    const response = new Response(body, {
+      status: 200,
+      headers: { "content-type": "image/png" },
+    });
+    vi.mocked(getRingCentralPlatform).mockResolvedValue({ get: vi.fn().mockResolvedValue(response) } as any);
+
+    const result = await downloadRingCentralAttachment({ account: mockAccount, contentUri: "/media/default" });
+    expect(result.buffer.length).toBe(5);
+    expect(result.contentType).toBe("image/png");
+  });
 });
 
 describe("Favorite Chats API", () => {
