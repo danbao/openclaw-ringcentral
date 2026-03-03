@@ -1,0 +1,3 @@
+## 2024-05-18 - For loops vs Higher-Order Array Methods for High-Frequency Searches
+**Learning:** While methods like `.filter()` or `.map()` are readable, the overhead of creating and executing a callback function per item becomes a measurable bottleneck for high-frequency or large-array search operations (e.g., thousands of objects). In benchmarking `searchCachedChats`, a traditional `for` loop on a pre-computed array of lowercased strings was ~2.5x faster than using `.filter()` (e.g., dropping from 552ms to 201ms for 100 queries over 50,000 items).
+**Action:** Default to standard `for` loops when iterating over large datasets in hot code paths or frequently executed search functions to avoid the callback overhead of higher-order array methods.
