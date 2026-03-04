@@ -206,15 +206,17 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
     },
     collectWarnings: ({ account, cfg }) => {
       const warnings: string[] = [];
-      const defaultGroupPolicy = resolveDefaultGroupPolicy(cfg);
+      const defaultGroupPolicy = typeof resolveDefaultGroupPolicy === "function"
+        ? resolveDefaultGroupPolicy(cfg)
+        : undefined;
       const { groupPolicy } = resolveAllowlistProviderRuntimeGroupPolicy({
         providerConfigPresent: (cfg as OpenClawConfig).channels?.ringcentral !== undefined,
         groupPolicy: account.config.groupPolicy,
         defaultGroupPolicy,
       });
+      const groupAllowlistConfigured =
+        Boolean(account.config.groups) && Object.keys(account.config.groups ?? {}).length > 0;
       if (groupPolicy === "open") {
-        const groupAllowlistConfigured =
-          Boolean(account.config.groups) && Object.keys(account.config.groups ?? {}).length > 0;
         if (groupAllowlistConfigured) {
           warnings.push(
             `- RingCentral chats: groupPolicy="open" allows any member in allowed groups to trigger (mention-gated). Set channels.ringcentral.groupPolicy="allowlist" and configure channels.ringcentral.groups.`,
@@ -224,6 +226,16 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
             `- RingCentral chats: groupPolicy="open" with no channels.ringcentral.groups allowlist; any group can trigger (mention-gated). Set channels.ringcentral.groupPolicy="allowlist" and configure channels.ringcentral.groups.`,
           );
         }
+      }
+      if (groupPolicy === "allowlist" && !groupAllowlistConfigured) {
+        warnings.push(
+          `- RingCentral chats: groupPolicy="allowlist" but no groups configured; all group messages will be silently dropped. Configure channels.ringcentral.groups to allow specific groups.`,
+        );
+      }
+      if (groupPolicy !== "disabled" && !account.config.botExtensionId) {
+        warnings.push(
+          `- RingCentral groups: botExtensionId is not configured; mention gating (requireMention) will not work. Set channels.ringcentral.botExtensionId to enable @-mention detection.`,
+        );
       }
       if (account.config.dm?.policy === "open") {
         warnings.push(
@@ -705,14 +717,25 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedRingCentralAccount> = {
         abortSignal: ctx.abortSignal,
         statusSink: (patch) => ctx.setStatus({ accountId: account.accountId, ...patch }),
       });
-      return () => {
-        unregister?.();
-        ctx.setStatus({
-          accountId: account.accountId,
-          running: false,
-          lastStopAt: Date.now(),
+
+      // Return a Promise that stays pending until abortSignal fires.
+      // This is the correct pattern for OpenClaw's channel lifecycle:
+      // - The Promise resolves with a cleanup function when the channel should stop
+      // - Framework waits for this Promise before triggering auto-restart
+      // - abortSignal is the mechanism for graceful shutdown
+      return new Promise<() => void>((resolve) => {
+        ctx.abortSignal.addEventListener("abort", () => {
+          const cleanup = () => {
+            unregister?.();
+            ctx.setStatus({
+              accountId: account.accountId,
+              running: false,
+              lastStopAt: Date.now(),
+            });
+          };
+          resolve(cleanup);
         });
-      };
+      });
     },
     logoutAccount: async ({ cfg, accountId }) => {
       // Clear cached WebSocket manager for this account to ensure

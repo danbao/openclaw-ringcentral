@@ -383,6 +383,18 @@ export function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9-_]/g, "_");
 }
 
+export function sanitizeAttachmentFilename(name: string): string {
+  // Allow alphanumeric, dot, dash, underscore
+  let sanitized = name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  // Prevent path traversal sequences
+  sanitized = sanitized.replace(/\.\.+/g, "_");
+  // Fallback if empty or hidden
+  if (!sanitized || sanitized === "." || sanitized === "_") {
+    return "attachment";
+  }
+  return sanitized;
+}
+
 /** @internal Exported for testing only. */
 export function summarizeChatInfo(chat: unknown): string {
   if (!chat || typeof chat !== "object") return "null";
@@ -510,25 +522,16 @@ export function isSenderAllowed(
   });
 }
 
-function resolveGroupConfig(params: {
-  groupId: string;
-  groupName?: string | null;
-  groups?: Record<string, { requireMention?: boolean; allow?: boolean; enabled?: boolean; users?: Array<string | number>; systemPrompt?: string }>;
-}) {
-  const { groupId, groupName, groups } = params;
-  const entries = groups ?? {};
-  const keys = Object.keys(entries);
-  if (keys.length === 0) {
-    return { entry: undefined, allowlistConfigured: false };
-  }
+function findGroupEntry(
+  groups: Record<string, { requireMention?: boolean; enabled?: boolean; users?: Array<string | number>; systemPrompt?: string }>,
+  groupId: string,
+  groupName?: string | null,
+) {
   const normalizedName = groupName?.trim().toLowerCase();
-  const candidates = [groupId, groupName ?? "", normalizedName ?? ""].filter(Boolean);
-  let entry = candidates.map((candidate) => entries[candidate]).find(Boolean);
-  if (!entry && normalizedName) {
-    entry = entries[normalizedName];
-  }
-  const fallback = entries["*"];
-  return { entry: entry ?? fallback, allowlistConfigured: true, fallback };
+  return groups[groupId]
+    ?? (groupName ? groups[groupName] : undefined)
+    ?? (normalizedName ? groups[normalizedName] : undefined)
+    ?? groups["*"];
 }
 
 function extractMentionInfo(mentions: RingCentralMention[], botExtensionId?: string | null) {
@@ -631,7 +634,7 @@ async function processMessageWithPipeline(params: {
   const hasMedia = attachments.length > 0;
   const rawBody = messageText || (hasMedia ? "<media:attachment>" : "");
   if (!rawBody) {
-    logger.warn(
+    logger.debug(
       `[${account.accountId}] DROP:empty_rawBody (postId=${fullEventBody.id ?? ""} chatId=${chatId} sender=${senderId})`,
     );
     return;
@@ -706,18 +709,6 @@ async function processMessageWithPipeline(params: {
   const isDirectChat = chatType === "Direct";
   const isGroup = !(isPersonalChat || isDirectChat);
 
-  // Only track configured groups; ignore any other group/team chats.
-  // NOTE: Direct/Personal chats are NOT subject to this filter.
-  const configuredGroups = account.config.groups ?? {};
-  const hasConfiguredGroups = Object.keys(configuredGroups).length > 0;
-  const isTrackedGroup = !isGroup
-    ? true
-    : Boolean(configuredGroups[chatId] || configuredGroups[String(chatId)] || configuredGroups[chatName ?? ""]);
-  if (isGroup && hasConfiguredGroups && !isTrackedGroup) {
-    logVerbose(core, `ignore group chat not in configured groups: chatId=${chatId}`);
-    return;
-  }
-
   // Session key should be per conversation id (RingCentral chatId)
   // NOTE: keep peer.kind stable for group vs dm.
   // Session routing
@@ -772,7 +763,9 @@ async function processMessageWithPipeline(params: {
     return;
   }
 
-  const defaultGroupPolicy = resolveDefaultGroupPolicy(config);
+  const defaultGroupPolicy = typeof resolveDefaultGroupPolicy === "function"
+    ? resolveDefaultGroupPolicy(config)
+    : undefined;
   const { groupPolicy, providerMissingFallbackApplied } = resolveAllowlistProviderRuntimeGroupPolicy({
     providerConfigPresent: config.channels?.ringcentral !== undefined,
     groupPolicy: account.config.groupPolicy,
@@ -785,13 +778,9 @@ async function processMessageWithPipeline(params: {
     blockedLabel: "group/team messages",
     log: (msg) => logger.warn(msg),
   });
-  const groupConfigResolved = resolveGroupConfig({
-    groupId: chatId,
-    groupName: chatName ?? null,
-    groups: account.config.groups ?? undefined,
-  });
-  const groupEntry = groupConfigResolved.entry;
-  const groupUsers = groupEntry?.users ?? account.config.groupAllowFrom ?? [];
+  const groups = account.config.groups ?? {};
+  const groupsConfigured = Object.keys(groups).length > 0;
+  const groupEntry = isGroup ? findGroupEntry(groups, chatId, chatName) : undefined;
   let effectiveWasMentioned: boolean | undefined;
 
   if (isGroup) {
@@ -800,25 +789,22 @@ async function processMessageWithPipeline(params: {
       logger.debug(`[${account.accountId}] DROP: groupPolicy=disabled`);
       return;
     }
-    const groupAllowlistConfigured = groupConfigResolved.allowlistConfigured;
-    const groupAllowed =
-      Boolean(groupEntry) || Boolean((account.config.groups ?? {})["*"]);
-    logger.debug(`[${account.accountId}] Allowlist check: configured=${groupAllowlistConfigured}, allowed=${groupAllowed}`);
     if (groupPolicy === "allowlist") {
-      if (!groupAllowlistConfigured) {
-        logger.debug(`[${account.accountId}] DROP: no allowlist configured`);
+      if (!groupsConfigured) {
+        logger.debug(`[${account.accountId}] DROP: allowlist policy but no groups configured`);
         return;
       }
-      if (!groupAllowed) {
+      if (!groupEntry) {
         logger.debug(`[${account.accountId}] DROP: not in allowlist`);
         return;
       }
     }
-    if (groupEntry?.enabled === false || groupEntry?.allow === false) {
+    if (groupEntry?.enabled === false) {
       logVerbose(core, `drop group message (chat disabled, chat=${chatId})`);
       return;
     }
 
+    const groupUsers = groupEntry?.users ?? [];
     if (groupUsers.length > 0) {
       const ok = isSenderAllowed(senderId, groupUsers.map((v) => String(v)));
       if (!ok) {
@@ -890,7 +876,7 @@ async function processMessageWithPipeline(params: {
             To: `ringcentral:${chatId}`,
             OriginatingChannel: "ringcentral",
             OriginatingTo: `ringcentral:${chatId}`,
-            ChatType: "channel",
+            ChatType: peerKind,
             AccountId: route.accountId,
             SessionKey: route.sessionKey,
             ConversationLabel: metaLabel,
@@ -915,7 +901,7 @@ async function processMessageWithPipeline(params: {
       ? await core.channel.pairing.readAllowFromStore("ringcentral").catch(() => [])
       : [];
   const effectiveAllowFrom = [...configAllowFromStr, ...storeAllowFrom];
-  const commandAllowFrom = isGroup ? groupUsers.map((v) => String(v)) : effectiveAllowFrom;
+  const commandAllowFrom = isGroup ? (groupEntry?.users ?? []).map((v: string | number) => String(v)) : effectiveAllowFrom;
   const useAccessGroups = config.commands?.useAccessGroups !== false;
   const senderAllowedForCommands = isSenderAllowed(senderId, commandAllowFrom);
   const commandAuthorized = shouldComputeAuth
@@ -1014,7 +1000,7 @@ async function processMessageWithPipeline(params: {
     body: rawBody,
   });
 
-  const groupSystemPrompt = groupConfigResolved.entry?.systemPrompt?.trim() || undefined;
+  const groupSystemPrompt = groupEntry?.systemPrompt?.trim() || undefined;
 
   // Resolve sender display name (best-effort, cached)
   let senderName: string | undefined;
@@ -1052,7 +1038,7 @@ async function processMessageWithPipeline(params: {
     To: isGroup ? `ringcentral:${peerKind}:${chatId}` : `ringcentral:${chatId}`,
     SessionKey: route.sessionKey,
     AccountId: route.accountId,
-    ChatType: isGroup ? "channel" : "direct",
+    ChatType: peerKind,
     ConversationLabel: conversationLabel,
     SenderId: senderId,
     SenderName: senderName,
@@ -1136,53 +1122,130 @@ async function processMessageWithPipeline(params: {
     logger.error(`ringcentral: failed repairing session label: ${String(err)}`);
   }
 
-  // Send "thinking" indicator before dispatching reply (follows Google Chat pattern)
+  // Resolve bot name for thinking indicator
   const botName = resolveBotDisplayName({
     accountName: account.config.name,
     agentId: route.agentId,
     config,
   });
+
+  // Track typing state for cleanup
   let typingPostId: string | undefined;
-  try {
-    const thinkingResult = await sendRingCentralMessage({
-      account,
-      chatId,
-      text: `> 🦞 ${botName} is thinking...`,
-    });
-    typingPostId = thinkingResult?.postId;
-    if (typingPostId) trackSentMessageId(typingPostId);
-  } catch (err) {
-    logger.debug(`[${account.accountId}] Failed to send thinking indicator: ${String(err)}`);
-  }
+  let hasDelivered = false;
+  let thinkingSent = false; // Guard to prevent multiple thinking messages
+  const toolCalls: { name?: string; phase?: string }[] = []; // Track tool calls for progress
 
   logger.debug(
     `[${account.accountId}] Dispatching: isCommand=${hasControlCommand} authorized=${commandAuthorized} sessionKey=${route.sessionKey}`,
   );
 
+  // Helper to update thinking message with tool progress
+  const updateThinkingProgress = async () => {
+    if (!typingPostId) return;
+    
+    // Build progress text
+    const lines = [`> 🦞 ${botName} is working...`];
+    
+    if (toolCalls.length > 0) {
+      lines.push(`> `);
+      for (const tool of toolCalls) {
+        const statusText = tool.phase === "complete" ? "✅ Completed" : "🔄 Running";
+        lines.push(`> **${tool.name || "unknown"}** ${statusText}`);
+      }
+    }
+    
+    try {
+      await updateRingCentralMessage({
+        account,
+        chatId,
+        postId: typingPostId,
+        text: lines.join("\n"),
+      });
+    } catch (err) {
+      logger.debug(`[${account.accountId}] Failed to update thinking progress: ${String(err)}`);
+    }
+  };
+
+  // Extended dispatcher options with typing callbacks (onReplyStart/onIdle)
+  // These are supported at runtime but not in the type definitions yet
+  const dispatcherOptionsWithTyping = {
+    deliver: async (payload: { text?: string; mediaUrls?: string[]; mediaUrl?: string }) => {
+      hasDelivered = true;
+      await deliverRingCentralReply({
+        payload,
+        account,
+        chatId,
+        core,
+        config,
+        statusSink,
+        typingPostId,
+      });
+      // Clear typingPostId after first delivery (it gets updated/deleted in deliverRingCentralReply)
+      typingPostId = undefined;
+    },
+    onError: (err: unknown, info: { kind: string }) => {
+      logger.error(
+        `[${account.accountId}] RingCentral ${info.kind} reply failed: ${String(err)}`,
+      );
+    },
+    // Send thinking indicator when model STARTS generating (not before)
+    // This prevents sending thinking when model decides NO_REPLY
+    // Guard: only send once per reply cycle to avoid duplicate messages on tool calls
+    onReplyStart: async () => {
+      if (thinkingSent) {
+        return; // Already sent thinking message, don't send another
+      }
+      thinkingSent = true;
+      try {
+        const thinkingResult = await sendRingCentralMessage({
+          account,
+          chatId,
+          text: `> 🦞 ${botName} is thinking...`,
+        });
+        typingPostId = thinkingResult?.postId;
+        if (typingPostId) trackSentMessageId(typingPostId);
+      } catch (err) {
+        logger.debug(`[${account.accountId}] Failed to send thinking indicator: ${String(err)}`);
+      }
+    },
+    onIdle: async () => {
+      // Cleanup typing indicator if model finished without delivering (e.g., NO_REPLY)
+      if (!hasDelivered && typingPostId) {
+        try {
+          await deleteRingCentralMessage({ account, chatId, postId: typingPostId });
+        } catch { /* ignore */ }
+        typingPostId = undefined;
+      }
+    },
+  } as Parameters<typeof core.channel.reply.dispatchReplyWithBufferedBlockDispatcher>[0]["dispatcherOptions"];
+
+  // Reply options with tool progress tracking
+  const replyOptionsWithToolProgress: Record<string, unknown> = {
+    // Track tool calls and update thinking message
+    onToolStart: async (payload: { name?: string; phase?: string }) => {
+      logger.debug(`[${account.accountId}] onToolStart callback fired: ${JSON.stringify(payload)}`);
+      const name = payload.name || "unknown";
+      // Check if this tool already exists in the list
+      const existingIndex = toolCalls.findIndex(t => t.name === name);
+      if (existingIndex >= 0) {
+        // Update existing tool (e.g., phase change)
+        toolCalls[existingIndex] = { name, phase: payload.phase };
+      } else {
+        // Add new tool
+        toolCalls.push({ name, phase: payload.phase });
+      }
+      await updateThinkingProgress();
+    },
+  };
+
   try {
-    await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+    // Cast to any to bypass incomplete type definitions
+    // replyOptions is supported at runtime with onToolStart callback
+    await (core.channel.reply.dispatchReplyWithBufferedBlockDispatcher as any)({
       ctx: ctxPayload,
       cfg: config,
-      dispatcherOptions: {
-        deliver: async (payload) => {
-          await deliverRingCentralReply({
-            payload,
-            account,
-            chatId,
-            core,
-            config,
-            statusSink,
-            typingPostId,
-          });
-          // Only use typing message for first delivery
-          typingPostId = undefined;
-        },
-        onError: (err, info) => {
-          logger.error(
-            `[${account.accountId}] RingCentral ${info.kind} reply failed: ${String(err)}`,
-          );
-        },
-      },
+      dispatcherOptions: dispatcherOptionsWithTyping,
+      replyOptions: replyOptionsWithToolProgress,
     });
   } catch (err) {
     logger.error(`[${account.accountId}] Command/reply dispatch failed: ${String(err)}`);
@@ -1202,12 +1265,15 @@ async function downloadAttachment(
   if (!contentUri) return null;
   const maxBytes = Math.max(1, mediaMaxMb) * 1024 * 1024;
   const downloaded = await downloadRingCentralAttachment({ account, contentUri, maxBytes });
+
+  const safeFilename = attachment.name ? sanitizeAttachmentFilename(attachment.name) : undefined;
+
   const saved = await core.channel.media.saveMediaBuffer(
     downloaded.buffer,
     downloaded.contentType ?? attachment.contentType,
     "inbound",
     maxBytes,
-    attachment.name,
+    safeFilename,
   );
   return { path: saved.path, contentType: saved.contentType };
 }
@@ -1295,7 +1361,20 @@ async function deliverRingCentralReply(params: {
   }
 
   if (payload.text) {
-    const wrappedText = `> --------answer--------\n${payload.text}\n> ---------end----------`;
+    // Delete thinking message before sending final reply
+    if (typingPostId) {
+      try {
+        await deleteRingCentralMessage({
+          account,
+          chatId,
+          postId: typingPostId,
+        });
+        logger.debug(`[${account.accountId}] Deleted thinking message before final reply`);
+      } catch (err) {
+        logger.debug(`[${account.accountId}] Failed to delete thinking message: ${String(err)}`);
+      }
+    }
+    
     const chunkLimit = account.config.textChunkLimit ?? 4000;
     const chunkMode = core.channel.text.resolveChunkMode(
       config,
@@ -1303,38 +1382,25 @@ async function deliverRingCentralReply(params: {
       account.accountId,
     );
     const chunks = core.channel.text.chunkMarkdownTextWithMode(
-      wrappedText,
+      payload.text,
       chunkLimit,
       chunkMode,
     );
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       try {
-        if (i === 0 && typingPostId) {
-          const updateResult = await updateRingCentralMessage({
-            account,
-            chatId,
-            postId: typingPostId,
-            text: chunk,
-          });
-          logger.debug(
-            `[${account.accountId}] RC_POST_UPDATE_OK chatId=${chatId} postId=${typingPostId} len=${chunk.length}`,
-          );
-          if (updateResult?.postId) trackSentMessageId(updateResult.postId);
-        } else {
-          const sendResult = await sendRingCentralMessage({
-            account,
-            chatId,
-            text: chunk,
-          });
-          if (sendResult?.postId) trackSentMessageId(sendResult.postId);
-        }
+        const sendResult = await sendRingCentralMessage({
+          account,
+          chatId,
+          text: chunk,
+        });
+        if (sendResult?.postId) trackSentMessageId(sendResult.postId);
         statusSink?.({ lastOutboundAt: Date.now() });
       } catch (err) {
         const errInfo = formatRcApiError(extractRcApiError(err, account.accountId));
         logger.error(`RingCentral message send failed: ${errInfo}`);
         logger.error(
-          `[${account.accountId}] RC_POST_UPDATE_FAIL chatId=${chatId} typingPostId=${typingPostId ?? ""} chunkIndex=${i} err=${errInfo}`,
+          `[${account.accountId}] RC_POST_SEND_FAIL chatId=${chatId} chunkIndex=${i} err=${errInfo}`,
         );
       }
     }
@@ -1370,14 +1436,42 @@ export async function startRingCentralMonitor(
   // ── Step 2: Create WS manager + connect + subscribe (once) ──
   logger.info(`[${account.accountId}] Starting RingCentral WebSocket subscription...`);
 
-  const mgr = await getOrCreateWsManager(account, logger);
+  let mgr: WsManager;
+  try {
+    mgr = await getOrCreateWsManager(account, logger);
+  } catch (err) {
+    const errStr = String(err);
+    if (errStr.includes("Invalid client application")) {
+      const masked = account.clientId
+        ? `${account.clientId.slice(0, 4)}...${account.clientId.slice(-4)}`
+        : "(empty)";
+      throw new Error(
+        `RingCentral clientId ${masked} is not a valid application. ` +
+        `Please verify your app at https://developers.ringcentral.com → Apps → check Client ID/Secret. ` +
+        `Original: ${errStr}`,
+      );
+    }
+    throw err;
+  }
 
-  // Guard: if this WsManager already has an active subscription, skip.
-  // The framework's auto-restart may call startRingCentralMonitor multiple
-  // times; we must not create duplicate subscriptions on the same wsExt.
+  // Guard: if this WsManager already has an active subscription, skip creating new one
+  // but return a proper cleanup function that manages the abort signal.
+  // The framework's auto-restart may call startRingCentralMonitor multiple times;
+  // we must not create duplicate subscriptions on the same wsExt.
   if (mgr.subscribed) {
-    logger.info(`[${account.accountId}] WS subscription already active, skipping duplicate start`);
-    return () => {}; // no-op cleanup; the original cleanup owns the lifecycle
+    logger.info(`[${account.accountId}] WS subscription already active, returning existing cleanup`);
+    // Return a cleanup that only handles the abort signal, not the WS lifecycle
+    // The original cleanup owns the WS lifecycle
+    return () => {
+      isShuttingDown = true;
+      if (healthCheckTimer) {
+        clearInterval(healthCheckTimer);
+        healthCheckTimer = null;
+      }
+      stopChatCacheSync();
+      // Note: We don't call wsManagers.delete or mgr.wsExt.revoke() here
+      // because this is a duplicate start - the original cleanup owns the lifecycle
+    };
   }
   await ensureWsConnected(mgr, account, logger);
 
@@ -1421,7 +1515,25 @@ export async function startRingCentralMonitor(
   ];
 
   // Subscribe once — autoRecover will restore the subscription on reconnect
-  await mgr.wsExt.subscribe(eventFilters, handleNotification);
+  try {
+    await mgr.wsExt.subscribe(eventFilters, handleNotification);
+  } catch (err) {
+    const errStr = String(err);
+    const isSub528 = errStr.includes("SUB-528") || errStr.includes("SubscriptionWebSocket");
+    if (isSub528) {
+      // Fatal: missing WebSocket Subscriptions permission — retrying won't help
+      clearRingCentralWsManager(account.accountId);
+      throw new Error(
+        `[FATAL] RingCentral app is missing the "WebSocket Subscriptions" permission. ` +
+        `Go to https://developers.ringcentral.com → your app → Settings → "App Permissions" ` +
+        `and enable "WebSocket Subscriptions", then restart the gateway. ` +
+        `No retries will be attempted for this error.`,
+      );
+    }
+    // Non-fatal subscribe errors: clean up WsManager to avoid leaked listeners
+    clearRingCentralWsManager(account.accountId);
+    throw err;
+  }
   mgr.subscribed = true;
 
   logger.info(
