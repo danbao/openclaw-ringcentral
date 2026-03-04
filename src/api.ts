@@ -360,21 +360,25 @@ export async function downloadRingCentralAttachment(params: {
   const { account, contentUri, maxBytes } = params;
   const platform = await getRingCentralPlatform(account);
 
+  // Default limit to 50MB if not specified to prevent DoS via memory exhaustion
+  const limit = maxBytes ?? 50 * 1024 * 1024;
+
   const response = await platform.get(contentUri);
   const contentType = response.headers.get("content-type") ?? undefined;
 
-  if (maxBytes) {
-    const lengthHeader = response.headers.get("content-length");
-    if (lengthHeader) {
-      const length = Number(lengthHeader);
-      if (Number.isFinite(length) && length > maxBytes) {
-        throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
-      }
+  const lengthHeader = response.headers.get("content-length");
+  if (lengthHeader) {
+    const length = Number(lengthHeader);
+    if (Number.isFinite(length) && length > limit) {
+      throw new Error(`RingCentral attachment exceeds max bytes (${limit})`);
     }
   }
 
-  if (!maxBytes || !response.body) {
+  if (!response.body) {
     const arrayBuffer = await response.arrayBuffer();
+    if (arrayBuffer.byteLength > limit) {
+      throw new Error(`RingCentral attachment exceeds max bytes (${limit})`);
+    }
     return { buffer: Buffer.from(arrayBuffer), contentType };
   }
 
@@ -387,9 +391,9 @@ export async function downloadRingCentralAttachment(params: {
       if (done) break;
       if (!value) continue;
       total += value.length;
-      if (total > maxBytes) {
+      if (total > limit) {
         await reader.cancel();
-        throw new Error(`RingCentral attachment exceeds max bytes (${maxBytes})`);
+        throw new Error(`RingCentral attachment exceeds max bytes (${limit})`);
       }
       chunks.push(Buffer.from(value));
     }
