@@ -1212,6 +1212,7 @@ async function processMessageWithPipeline(params: {
   const replyOptionsWithToolProgress: Record<string, unknown> = {
     // Track tool calls and update thinking message
     onToolStart: async (payload: { name?: string; phase?: string }) => {
+      logger.debug(`[${account.accountId}] onToolStart callback fired: ${JSON.stringify(payload)}`);
       const name = payload.name || "unknown";
       // Check if this tool already exists in the list
       const existingIndex = toolCalls.findIndex(t => t.name === name);
@@ -1227,13 +1228,14 @@ async function processMessageWithPipeline(params: {
   };
 
   try {
-    await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+    // Cast to any to bypass incomplete type definitions
+    // replyOptions is supported at runtime with onToolStart callback
+    await (core.channel.reply.dispatchReplyWithBufferedBlockDispatcher as any)({
       ctx: ctxPayload,
       cfg: config,
       dispatcherOptions: dispatcherOptionsWithTyping,
-      // Type assertion needed: replyOptions is supported at runtime but not in type definitions
-      ...(replyOptionsWithToolProgress as object),
-    } as Parameters<typeof core.channel.reply.dispatchReplyWithBufferedBlockDispatcher>[0] & object);
+      replyOptions: replyOptionsWithToolProgress,
+    });
   } catch (err) {
     logger.error(`[${account.accountId}] Command/reply dispatch failed: ${String(err)}`);
     if (typingPostId) {
