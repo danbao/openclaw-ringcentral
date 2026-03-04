@@ -1121,10 +1121,39 @@ async function processMessageWithPipeline(params: {
   let typingPostId: string | undefined;
   let hasDelivered = false;
   let thinkingSent = false; // Guard to prevent multiple thinking messages
+  const toolCalls: { name?: string; phase?: string }[] = []; // Track tool calls for progress
 
   logger.debug(
     `[${account.accountId}] Dispatching: isCommand=${hasControlCommand} authorized=${commandAuthorized} sessionKey=${route.sessionKey}`,
   );
+
+  // Helper to update thinking message with tool progress
+  const updateThinkingProgress = async () => {
+    if (!typingPostId) return;
+    
+    // Build progress text
+    const lines = [`> 🦞 ${botName} is thinking...`];
+    
+    if (toolCalls.length > 0) {
+      lines.push(`> `);
+      lines.push(`> **Tools:**`);
+      for (const tool of toolCalls) {
+        const phaseIcon = tool.phase === "complete" ? "✅" : "🔄";
+        lines.push(`> ${phaseIcon} \`${tool.name || "unknown"}\``);
+      }
+    }
+    
+    try {
+      await updateRingCentralMessage({
+        account,
+        chatId,
+        postId: typingPostId,
+        text: lines.join("\n"),
+      });
+    } catch (err) {
+      logger.debug(`[${account.accountId}] Failed to update thinking progress: ${String(err)}`);
+    }
+  };
 
   // Extended dispatcher options with typing callbacks (onReplyStart/onIdle)
   // These are supported at runtime but not in the type definitions yet
@@ -1179,12 +1208,32 @@ async function processMessageWithPipeline(params: {
     },
   } as Parameters<typeof core.channel.reply.dispatchReplyWithBufferedBlockDispatcher>[0]["dispatcherOptions"];
 
+  // Reply options with tool progress tracking
+  const replyOptionsWithToolProgress: Record<string, unknown> = {
+    // Track tool calls and update thinking message
+    onToolStart: async (payload: { name?: string; phase?: string }) => {
+      const name = payload.name || "unknown";
+      // Check if this tool already exists in the list
+      const existingIndex = toolCalls.findIndex(t => t.name === name);
+      if (existingIndex >= 0) {
+        // Update existing tool (e.g., phase change)
+        toolCalls[existingIndex] = { name, phase: payload.phase };
+      } else {
+        // Add new tool
+        toolCalls.push({ name, phase: payload.phase });
+      }
+      await updateThinkingProgress();
+    },
+  };
+
   try {
     await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
       ctx: ctxPayload,
       cfg: config,
       dispatcherOptions: dispatcherOptionsWithTyping,
-    });
+      // Type assertion needed: replyOptions is supported at runtime but not in type definitions
+      ...(replyOptionsWithToolProgress as object),
+    } as Parameters<typeof core.channel.reply.dispatchReplyWithBufferedBlockDispatcher>[0] & object);
   } catch (err) {
     logger.error(`[${account.accountId}] Command/reply dispatch failed: ${String(err)}`);
     if (typingPostId) {
