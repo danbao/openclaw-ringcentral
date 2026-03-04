@@ -1120,6 +1120,7 @@ async function processMessageWithPipeline(params: {
   // Track typing state for cleanup
   let typingPostId: string | undefined;
   let hasDelivered = false;
+  let thinkingSent = false; // Guard to prevent multiple thinking messages
 
   logger.debug(
     `[${account.accountId}] Dispatching: isCommand=${hasControlCommand} authorized=${commandAuthorized} sessionKey=${route.sessionKey}`,
@@ -1149,7 +1150,12 @@ async function processMessageWithPipeline(params: {
     },
     // Send thinking indicator when model STARTS generating (not before)
     // This prevents sending thinking when model decides NO_REPLY
+    // Guard: only send once per reply cycle to avoid duplicate messages on tool calls
     onReplyStart: async () => {
+      if (thinkingSent) {
+        return; // Already sent thinking message, don't send another
+      }
+      thinkingSent = true;
       try {
         const thinkingResult = await sendRingCentralMessage({
           account,
