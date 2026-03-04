@@ -383,29 +383,6 @@ export function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9-_]/g, "_");
 }
 
-export function sanitizeAttachmentFilename(name?: string): string | undefined {
-  if (!name) return undefined;
-  // Replace anything that is not alphanumeric, dot, dash, or underscore.
-  let safeName = name.replace(/[^a-zA-Z0-9._-]/g, "_");
-
-  // Prevent directory traversal sequences (e.g., "..", "...", etc.)
-  safeName = safeName.replace(/\.{2,}/g, ".");
-
-  // Neutralize `/../` replacements like `_._._` or `_._`
-  safeName = safeName.replace(/_\._/g, "_");
-  safeName = safeName.replace(/(\._)+/g, "_");
-  safeName = safeName.replace(/(_\.)+/g, "_");
-
-  // Condense multiple underscores
-  safeName = safeName.replace(/_+/g, "_");
-
-  // Remove leading or trailing non-alphanumeric chars
-  safeName = safeName.replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, "");
-
-  if (!safeName) return "attachment"; // Fallback if name becomes empty after sanitization
-  return safeName;
-}
-
 /** @internal Exported for testing only. */
 export function summarizeChatInfo(chat: unknown): string {
   if (!chat || typeof chat !== "object") return "null";
@@ -1204,7 +1181,7 @@ async function downloadAttachment(
     downloaded.contentType ?? attachment.contentType,
     "inbound",
     maxBytes,
-    sanitizeAttachmentFilename(attachment.name),
+    attachment.name,
   );
   return { path: saved.path, contentType: saved.contentType };
 }
