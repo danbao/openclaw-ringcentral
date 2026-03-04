@@ -33,6 +33,7 @@ const CHAT_TYPES = ["Personal", "Direct", "Group", "Team", "Everyone"] as const;
 const CACHE_FILE = "ringcentral-chat-cache.json";
 
 let memoryCache: CachedChat[] = [];
+let searchCache: string[] = [];
 let cachedOwnerId: string | undefined;
 let syncContext: {
   account: ResolvedRingCentralAccount;
@@ -47,7 +48,14 @@ export function getCachedChats(): CachedChat[] {
 export function searchCachedChats(query: string): CachedChat[] {
   const q = query.toLowerCase().trim();
   if (!q) return [];
-  return memoryCache.filter((c) => (c.name || "").toLowerCase().includes(q));
+
+  const results: CachedChat[] = [];
+  for (let i = 0; i < searchCache.length; i++) {
+    if (searchCache[i].includes(q)) {
+      results.push(memoryCache[i]);
+    }
+  }
+  return results;
 }
 
 export function findDirectChatByMember(memberId: string): CachedChat | undefined {
@@ -244,6 +252,7 @@ async function syncOnce(
 
     const changed = cacheChanged(memoryCache, chats);
     memoryCache = chats;
+    searchCache = chats.map(c => (c.name || "").toLowerCase());
 
     if (workspace && changed) {
       await writeCacheFile(workspace, chats, cachedOwnerId, logger);
@@ -277,6 +286,7 @@ export async function startChatCacheSync(params: {
   if (workspace) {
     const cached = await readCacheFile(workspace, logger);
     memoryCache = cached.chats;
+    searchCache = cached.chats.map(c => (c.name || "").toLowerCase());
     if (cached.ownerId) {
       cachedOwnerId = cached.ownerId;
     }
