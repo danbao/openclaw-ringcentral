@@ -1110,53 +1110,74 @@ async function processMessageWithPipeline(params: {
     logger.error(`ringcentral: failed repairing session label: ${String(err)}`);
   }
 
-  // Send "thinking" indicator before dispatching reply (follows Google Chat pattern)
+  // Resolve bot name for thinking indicator
   const botName = resolveBotDisplayName({
     accountName: account.config.name,
     agentId: route.agentId,
     config,
   });
+
+  // Track typing state for cleanup
   let typingPostId: string | undefined;
-  try {
-    const thinkingResult = await sendRingCentralMessage({
-      account,
-      chatId,
-      text: `> 🦞 ${botName} is thinking...`,
-    });
-    typingPostId = thinkingResult?.postId;
-    if (typingPostId) trackSentMessageId(typingPostId);
-  } catch (err) {
-    logger.debug(`[${account.accountId}] Failed to send thinking indicator: ${String(err)}`);
-  }
+  let hasDelivered = false;
 
   logger.debug(
     `[${account.accountId}] Dispatching: isCommand=${hasControlCommand} authorized=${commandAuthorized} sessionKey=${route.sessionKey}`,
   );
 
+  // Extended dispatcher options with typing callbacks (onReplyStart/onIdle)
+  // These are supported at runtime but not in the type definitions yet
+  const dispatcherOptionsWithTyping = {
+    deliver: async (payload: { text?: string; mediaUrls?: string[]; mediaUrl?: string }) => {
+      hasDelivered = true;
+      await deliverRingCentralReply({
+        payload,
+        account,
+        chatId,
+        core,
+        config,
+        statusSink,
+        typingPostId,
+      });
+      // Clear typingPostId after first delivery (it gets updated/deleted in deliverRingCentralReply)
+      typingPostId = undefined;
+    },
+    onError: (err: unknown, info: { kind: string }) => {
+      logger.error(
+        `[${account.accountId}] RingCentral ${info.kind} reply failed: ${String(err)}`,
+      );
+    },
+    // Send thinking indicator when model STARTS generating (not before)
+    // This prevents sending thinking when model decides NO_REPLY
+    onReplyStart: async () => {
+      try {
+        const thinkingResult = await sendRingCentralMessage({
+          account,
+          chatId,
+          text: `> 🦞 ${botName} is thinking...`,
+        });
+        typingPostId = thinkingResult?.postId;
+        if (typingPostId) trackSentMessageId(typingPostId);
+      } catch (err) {
+        logger.debug(`[${account.accountId}] Failed to send thinking indicator: ${String(err)}`);
+      }
+    },
+    onIdle: async () => {
+      // Cleanup typing indicator if model finished without delivering (e.g., NO_REPLY)
+      if (!hasDelivered && typingPostId) {
+        try {
+          await deleteRingCentralMessage({ account, chatId, postId: typingPostId });
+        } catch { /* ignore */ }
+        typingPostId = undefined;
+      }
+    },
+  } as Parameters<typeof core.channel.reply.dispatchReplyWithBufferedBlockDispatcher>[0]["dispatcherOptions"];
+
   try {
     await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
       ctx: ctxPayload,
       cfg: config,
-      dispatcherOptions: {
-        deliver: async (payload) => {
-          await deliverRingCentralReply({
-            payload,
-            account,
-            chatId,
-            core,
-            config,
-            statusSink,
-            typingPostId,
-          });
-          // Only use typing message for first delivery
-          typingPostId = undefined;
-        },
-        onError: (err, info) => {
-          logger.error(
-            `[${account.accountId}] RingCentral ${info.kind} reply failed: ${String(err)}`,
-          );
-        },
-      },
+      dispatcherOptions: dispatcherOptionsWithTyping,
     });
   } catch (err) {
     logger.error(`[${account.accountId}] Command/reply dispatch failed: ${String(err)}`);
