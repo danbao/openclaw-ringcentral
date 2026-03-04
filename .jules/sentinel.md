@@ -1,0 +1,5 @@
+## 2026-02-24 - Fix path traversal in file download
+
+**Vulnerability:** The application was passing unsanitized attachment filenames straight from the RingCentral API into `core.channel.media.saveMediaBuffer`. This exposed a path traversal vulnerability because an attacker could send an attachment with a manipulated name like `../../../etc/passwd` to write files to arbitrary locations in the filesystem.
+**Learning:** External attachment filenames (`attachment.name`) obtained from RingCentral are not inherently safe and should always be explicitly sanitized using the dedicated `sanitizeAttachmentFilename` helper before being used in file system operations to prevent path traversal attacks.
+**Prevention:** Always validate and sanitize user-provided file names before writing to the local filesystem. Specifically, use an allowlist-based approach (alphanumeric, dot, dash, underscore) and strictly remove/neutralize any directory traversal sequences like `..` before utilizing the filename.

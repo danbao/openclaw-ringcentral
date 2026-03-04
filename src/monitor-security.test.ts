@@ -1,5 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { summarizeChatInfo, summarizeEvent } from "./monitor.js";
+import { summarizeChatInfo, summarizeEvent, sanitizeAttachmentFilename } from "./monitor.js";
+
+describe("sanitizeAttachmentFilename", () => {
+  it("keeps normal filenames intact", () => {
+    expect(sanitizeAttachmentFilename("hello.txt")).toBe("hello.txt");
+    expect(sanitizeAttachmentFilename("image-1_2.png")).toBe("image-1_2.png");
+  });
+
+  it("replaces spaces and unsafe characters with underscores", () => {
+    expect(sanitizeAttachmentFilename("hello world.txt")).toBe("hello_world.txt");
+    expect(sanitizeAttachmentFilename("foo!@#bar.doc")).toBe("foo_bar.doc");
+    expect(sanitizeAttachmentFilename("a/b\\c.pdf")).toBe("a_b_c.pdf");
+  });
+
+  it("neutralizes path traversal sequences", () => {
+    expect(sanitizeAttachmentFilename("../../../etc/passwd")).toBe("etc_passwd");
+    expect(sanitizeAttachmentFilename("..\\..\\windows\\system32")).toBe("windows_system32");
+    expect(sanitizeAttachmentFilename("a/b/../../../c.txt")).toBe("a_b_c.txt");
+  });
+
+  it("handles empty or null inputs", () => {
+    expect(sanitizeAttachmentFilename("")).toBeUndefined();
+    expect(sanitizeAttachmentFilename(undefined)).toBeUndefined();
+  });
+
+  it("provides fallback if name becomes empty after sanitization", () => {
+    expect(sanitizeAttachmentFilename("///")).toBe("attachment");
+    expect(sanitizeAttachmentFilename("...")).toBe("attachment");
+    expect(sanitizeAttachmentFilename("!@#")).toBe("attachment");
+  });
+});
 
 describe("summarizeChatInfo", () => {
   it("extracts only safe fields from chat object", () => {
