@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.3.3] - 2026-03-03
+
+### Added
+
+- **AI Code Validator** - Added GitHub Actions workflow for automated AI code quality checks on pull requests (#95)
+- **Tool Call Progress in Thinking Message** - Show tool call progress in the thinking indicator message while agent is processing
+- **Message Processing Flowchart** - Added Mermaid flowchart documenting the message processing pipeline
+
+### Changed
+
+- **Group Policy Handling** - Aligned group policy handling with official channel patterns; simplified redundant ChatType ternary in isGroup block
+- **Error Handling & Resilience** - Improved RingCentral error handling for more robust operation
+
+### Fixed
+
+- **`read` action fails with "chatId or channelId is required"** - `resolveChannelId` now accepts `target` parameter as fallback, fixing cross-channel message reading via the message tool (#96, thanks [@cpoopc](https://github.com/cpoopc) for reporting)
+- **Thinking Message Cleanup** - Delete thinking message before sending final reply; prevent duplicate thinking messages on tool calls
+- **Thinking Indicator Timing** - Delay thinking indicator until model actually starts generating to avoid premature display
+- **replyOptions Passthrough** - Pass replyOptions correctly to enable onToolStart callback for tool progress display
+- **WebSocket Duplicate Start** - Return proper cleanup for duplicate WebSocket starts to prevent resource leaks
+- **Account Lifecycle** - Correct startAccount lifecycle to prevent auto-restart loop
+
 ## [2026.2.25] - 2026-02-25
 
 ### Added
