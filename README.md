@@ -278,6 +278,13 @@ group DMs:
 `threadRequireMention=false`, replies inside a thread where the bot already
 participated can activate the bot without a new mention.
 
+Threaded replies use a separate OpenClaw session
+(`...:channel|{group}:{chatId}:thread:{threadId}`) so multiple threads in the
+same Team can run in parallel, each with its own thinking placeholder and final
+reply. Unthreaded timeline messages continue to share the chat-level session.
+Inbound thread messages also receive recent posts from that thread in
+`BodyForAgent` (see `threadHistoryLimit`).
+
 ### Attachments And Processing Placeholder
 
 ```json
@@ -440,6 +447,7 @@ ignored.
 | `RC_ATTACHMENT_MAX_COUNT` | Max attachments per inbound message, default `5` |
 | `RC_ATTACHMENT_MAX_BYTES` | Max bytes per downloaded attachment, default `5242880` |
 | `RC_HISTORY_MESSAGE_LIMIT` | Default history record count, max `1000` |
+| `RC_THREAD_HISTORY_LIMIT` | Recent thread posts injected into inbound context, default `20`, max `100` |
 | `RC_HOME_CHANNEL` | Default Home chat for history/artifact tools and owner confirmations |
 | `RC_HOME_CHANNEL_NAME` | Display name for the Home chat |
 
@@ -464,6 +472,7 @@ ignored.
 | `allowBots` | `false` | Allow bot-authored inbound messages |
 | `botExtensionId` | auto-detected | Bot person ID for mention detection |
 | `historyMessageLimit` | `250` | Default history record count, max `1000` |
+| `threadHistoryLimit` | `20` | Recent thread posts injected into inbound agent context, max `100` |
 | `homeChannel` | none | Default Home chat for history/artifact tools and owner confirmations |
 
 ### Legacy Migration Errors

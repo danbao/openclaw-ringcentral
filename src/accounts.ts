@@ -16,6 +16,8 @@ import type {
 export const DEFAULT_SERVER = "https://platform.ringcentral.com";
 export const DEFAULT_HISTORY_MESSAGE_LIMIT = 250;
 export const MAX_HISTORY_MESSAGE_LIMIT = 1000;
+export const DEFAULT_THREAD_HISTORY_LIMIT = 20;
+export const MAX_THREAD_HISTORY_LIMIT = 100;
 export const DEFAULT_ATTACHMENT_MAX_COUNT = 5;
 export const DEFAULT_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
 export const MAX_ATTACHMENT_MAX_COUNT = 20;
@@ -301,6 +303,11 @@ export function resolveAccount(
     1,
     MAX_HISTORY_MESSAGE_LIMIT,
   );
+  const threadHistoryLimit = clampInteger(
+    readNumber(cfg.threadHistoryLimit, DEFAULT_THREAD_HISTORY_LIMIT, "RC_THREAD_HISTORY_LIMIT", env),
+    1,
+    MAX_THREAD_HISTORY_LIMIT,
+  );
   const requireMentionEnv = readEnv("RC_REQUIRE_MENTION", env);
   const requireMention = readBoolean(cfg.requireMention, true, "RC_REQUIRE_MENTION", env);
 
@@ -325,6 +332,7 @@ export function resolveAccount(
     attachments: resolveAttachmentDownloads(cfg, env),
     debugInboundMessages: readBoolean(cfg.debugInboundMessages, false, "RC_DEBUG_INBOUND_MESSAGES", env),
     historyMessageLimit,
+    threadHistoryLimit,
     homeChannel: cfg.homeChannel ?? readEnv("RC_HOME_CHANNEL", env),
     homeChannelName: cfg.homeChannelName ?? readEnv("RC_HOME_CHANNEL_NAME", env),
     config: { ...cfg, teams: resolveTeams(cfg, env) },
