@@ -9,6 +9,7 @@ import { RingCentralApiError, type RingCentralClient } from "./client.js";
 import { sendMessage, sendTypingIndicator, updateMessage } from "./send.js";
 import { RINGCENTRAL_CHANNEL_ID } from "./shared.js";
 import { buildChannelTarget, buildGroupTarget, buildTeamTarget, buildUserTarget } from "./targets.js";
+import { loadThreadContextText } from "./thread-context.js";
 import type { ThreadParticipationTracker } from "./threading.js";
 import type { Chat, PersonInfo, Post, ResolvedAccount, RingCentralGroupDmConfig, RingCentralTeamConfig } from "./types.js";
 
@@ -36,6 +37,7 @@ type ChatSurface =
       groupPolicy: "disabled" | "allowlist" | "open";
     };
 type ResolveAgentRoute = typeof import("openclaw/plugin-sdk/routing")["resolveAgentRoute"];
+type ResolveThreadSessionKeys = typeof import("openclaw/plugin-sdk/routing")["resolveThreadSessionKeys"];
 type FinalizeInboundContext =
   typeof import("openclaw/plugin-sdk/reply-runtime")["finalizeInboundContext"];
 type DispatchReplyWithBufferedBlockDispatcher =
@@ -46,6 +48,7 @@ const warnedDropChatIds = new Set<string>();
 type ChannelRuntimeLike = {
   routing?: {
     resolveAgentRoute?: ResolveAgentRoute;
+    resolveThreadSessionKeys?: ResolveThreadSessionKeys;
   };
   reply?: {
     finalizeInboundContext?: FinalizeInboundContext;
@@ -215,9 +218,24 @@ export async function handleInboundPost(inCtx: InboundContext): Promise<void> {
   // bot-sent post set used by resolveReplyTransport(replyToMode:"first").
   tracker.rememberThread(post.threadId ?? post.parentPostId ?? post.id);
 
-  const bodyForAgent = stripRcMentions(text, inCtx.botPersonId, {
+  const currentBody = stripRcMentions(text, inCtx.botPersonId, {
     preserveNonBotMentions: chatType === "direct" && !!account.ownerCredentials,
   });
+  const effectiveThreadId = post.threadId ?? post.parentPostId;
+  let bodyForAgent = currentBody;
+  if (effectiveThreadId) {
+    const threadHistory = await loadThreadContextText({
+      client: ownerClient ?? botClient,
+      chatId,
+      threadId: String(effectiveThreadId),
+      limit: account.threadHistoryLimit,
+      excludePostId: post.id,
+      log,
+    });
+    if (threadHistory) {
+      bodyForAgent = `[RingCentral thread context]\n${threadHistory}\n\n${currentBody}`;
+    }
+  }
   const mediaPayload = await resolveInboundAttachmentsForAgent({
     attachments: post.attachments,
     primaryClient: botClient,
@@ -230,19 +248,26 @@ export async function handleInboundPost(inCtx: InboundContext): Promise<void> {
     kind: chatType,
     id: chatType === "direct" ? senderId : chatId,
   };
-  const route =
-    runtime.routing?.resolveAgentRoute?.({
-      cfg,
-      channel: RINGCENTRAL_CHANNEL_ID,
-      accountId: "default",
-      peer,
-    }) ??
-    (await import("openclaw/plugin-sdk/routing")).resolveAgentRoute({
-      cfg,
-      channel: RINGCENTRAL_CHANNEL_ID,
-      accountId: "default",
-      peer,
-    });
+  const routingSdk =
+    runtime.routing?.resolveAgentRoute && runtime.routing?.resolveThreadSessionKeys
+      ? null
+      : await import("openclaw/plugin-sdk/routing");
+  const resolveAgentRoute = runtime.routing?.resolveAgentRoute ?? routingSdk!.resolveAgentRoute;
+  const resolveThreadSessionKeys =
+    runtime.routing?.resolveThreadSessionKeys ?? routingSdk!.resolveThreadSessionKeys;
+  const route = resolveAgentRoute({
+    cfg,
+    channel: RINGCENTRAL_CHANNEL_ID,
+    accountId: "default",
+    peer,
+  });
+  const sessionKey = effectiveThreadId
+    ? resolveThreadSessionKeys({
+        baseSessionKey: route.sessionKey,
+        threadId: String(effectiveThreadId),
+        parentSessionKey: route.sessionKey,
+      }).sessionKey
+    : route.sessionKey;
   const target = buildInboundTarget({ surface, chatId, senderId });
   const fallbackReplyRuntime =
     runtime.reply?.finalizeInboundContext && runtime.reply?.dispatchReplyWithBufferedBlockDispatcher
@@ -254,14 +279,14 @@ export async function handleInboundPost(inCtx: InboundContext): Promise<void> {
     runtime.reply?.dispatchReplyWithBufferedBlockDispatcher ??
     fallbackReplyRuntime!.dispatchReplyWithBufferedBlockDispatcher;
   const context = finalizeInboundContext({
-    Body: bodyForAgent,
+    Body: currentBody,
     BodyForAgent: bodyForAgent,
     RawBody: text,
-    CommandBody: bodyForAgent,
-    BodyForCommands: bodyForAgent,
+    CommandBody: currentBody,
+    BodyForCommands: currentBody,
     From: target,
     To: target,
-    SessionKey: route.sessionKey,
+    SessionKey: sessionKey,
     AccountId: route.accountId ?? "default",
     MessageSid: post.id,
     MessageSidFull: post.id,
@@ -289,7 +314,7 @@ export async function handleInboundPost(inCtx: InboundContext): Promise<void> {
       postId: post.id,
       parentPostId: post.parentPostId,
       threadId: post.threadId,
-      routeSessionKey: route.sessionKey,
+      routeSessionKey: sessionKey,
     });
   }, DISPATCH_START_WARN_MS);
   dispatchWarnTimer.unref?.();
@@ -298,30 +323,36 @@ export async function handleInboundPost(inCtx: InboundContext): Promise<void> {
     postId: post.id,
     parentPostId: post.parentPostId,
     threadId: post.threadId,
-    routeSessionKey: route.sessionKey,
+    routeSessionKey: sessionKey,
+  });
+  // Start the processing placeholder as soon as dispatch begins. OpenClaw group
+  // typingMode=message only fires onReplyStart when renderable text appears, so
+  // approval waits / tool calls would otherwise show no thinking indicator.
+  // Keep onReplyStart wired below; typingPostId guards against duplicates.
+  const dispatcherOptions = createDispatcherOptions({
+    botClient,
+    ownerClient,
+    account,
+    chatId,
+    sourcePostId: post.id,
+    sourceThreadId: post.threadId,
+    tracker,
+    markOwnPost: inCtx.markOwnPost,
+    log,
   });
   try {
+    await dispatcherOptions.onReplyStart();
     await dispatchReplyWithBufferedBlockDispatcher({
       ctx: context,
       cfg,
-      dispatcherOptions: createDispatcherOptions({
-        botClient,
-        ownerClient,
-        account,
-        chatId,
-        sourcePostId: post.id,
-        sourceThreadId: post.threadId,
-        tracker,
-        markOwnPost: inCtx.markOwnPost,
-        log,
-      }),
+      dispatcherOptions,
     });
     logInboundDispatchDiagnostic(log, "complete", {
       chatId,
       postId: post.id,
       parentPostId: post.parentPostId,
       threadId: post.threadId,
-      routeSessionKey: route.sessionKey,
+      routeSessionKey: sessionKey,
     });
   } catch (err) {
     logInboundDispatchDiagnostic(log, "failed", {
@@ -329,7 +360,7 @@ export async function handleInboundPost(inCtx: InboundContext): Promise<void> {
       postId: post.id,
       parentPostId: post.parentPostId,
       threadId: post.threadId,
-      routeSessionKey: route.sessionKey,
+      routeSessionKey: sessionKey,
       error: formatTypingPostError(err),
     });
     throw err;

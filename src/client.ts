@@ -287,6 +287,21 @@ export class RingCentralClient {
     );
   }
 
+  async listThreadPosts(threadId: string, recordCount = 50): Promise<PaginatedRecords<Post>> {
+    const count = Math.trunc(recordCount);
+    try {
+      return await this.request(
+        "GET",
+        `/team-messaging/v1/threads/${RingCentralClient.encodeId(threadId)}/posts?recordCount=${count}`,
+      );
+    } catch {
+      return this.request(
+        "GET",
+        `/restapi/v1.0/glip/threads/${RingCentralClient.encodeId(threadId)}/posts?recordCount=${count}`,
+      );
+    }
+  }
+
   async uploadFile(
     chatId: string,
     fileName: string,

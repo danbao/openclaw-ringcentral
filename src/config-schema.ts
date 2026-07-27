@@ -98,6 +98,7 @@ export const ringCentralConfigSchema = z.object({
   attachments: attachmentsSchema.optional(),
   debugInboundMessages: z.boolean().optional(),
   historyMessageLimit: z.number().int().min(1).max(1000).optional(),
+  threadHistoryLimit: z.number().int().min(1).max(100).optional(),
   homeChannel: z.string().optional(),
   homeChannelName: z.string().optional(),
   requireMention: z.boolean().optional(),

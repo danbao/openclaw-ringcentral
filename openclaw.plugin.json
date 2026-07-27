@@ -159,6 +159,11 @@
       "label": "History Message Limit",
       "advanced": true
     },
+    "threadHistoryLimit": {
+      "label": "Thread History Limit",
+      "help": "Number of recent thread posts injected into inbound agent context. Default 20, max 100.",
+      "advanced": true
+    },
     "homeChannel": {
       "label": "Home Channel",
       "help": "Default Home chat for history/artifact tools and owner confirmation flows.",
@@ -397,6 +402,11 @@
         "type": "integer",
         "minimum": 1,
         "maximum": 1000
+      },
+      "threadHistoryLimit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100
       },
       "homeChannel": {
         "type": "string"
@@ -671,6 +681,11 @@
             "minimum": 1,
             "maximum": 1000
           },
+          "threadHistoryLimit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
           "homeChannel": {
             "type": "string"
           },
@@ -883,6 +898,11 @@
         },
         "historyMessageLimit": {
           "label": "History Message Limit",
+          "advanced": true
+        },
+        "threadHistoryLimit": {
+          "label": "Thread History Limit",
+          "help": "Number of recent thread posts injected into inbound agent context. Default 20, max 100.",
           "advanced": true
         },
         "homeChannel": {

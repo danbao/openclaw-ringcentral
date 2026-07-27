@@ -38,6 +38,9 @@ function makeClient(chatType = "Team", email = "user@example.com") {
     sendPost: vi.fn().mockResolvedValue({ id: "sent-1" }),
     updatePost: vi.fn(),
     deletePost: vi.fn(),
+    listThreadPosts: vi.fn().mockResolvedValue({ records: [] }),
+    listPosts: vi.fn().mockResolvedValue({ records: [] }),
+    listLegacyGroupPosts: vi.fn().mockResolvedValue({ records: [] }),
     downloadAttachment: vi.fn().mockResolvedValue({
       buffer: Buffer.from("image"),
       contentType: "image/png",
@@ -118,14 +121,170 @@ describe("handleInboundPost", () => {
     expect(runtime.reply.dispatchReplyWithBufferedBlockDispatcher).toHaveBeenCalledOnce();
     expect(runtime.reply.finalizeInboundContext).toHaveBeenCalledWith(
       expect.objectContaining({
+        Body: "hello",
         BodyForAgent: "hello",
+        CommandBody: "hello",
         ChatType: "channel",
         From: "team:g1",
         NativeChannelId: "g1",
+        SessionKey: "agent:main:ringcentral:channel:g1",
       }),
     );
     expect(runtime.routing.resolveAgentRoute).toHaveBeenCalledWith(
       expect.objectContaining({ peer: { kind: "channel", id: "g1" } }),
+    );
+  });
+
+  it("routes threaded team messages to a thread-scoped session and injects thread context", async () => {
+    const runtime = makeRuntime();
+    const botClient = makeClient();
+    botClient.listThreadPosts.mockResolvedValue({
+      records: [
+        {
+          id: "thread-root",
+          groupId: "g1",
+          type: "TextMessage",
+          text: "root question",
+          creatorId: "u1",
+          creationTime: "2026-01-01T00:00:00Z",
+          lastModifiedTime: "2026-01-01T00:00:00Z",
+        },
+        {
+          id: "older-reply",
+          groupId: "g1",
+          type: "TextMessage",
+          text: "earlier reply",
+          creatorId: "u2",
+          threadId: "thread-root",
+          parentPostId: "thread-root",
+          creationTime: "2026-01-01T00:01:00Z",
+          lastModifiedTime: "2026-01-01T00:01:00Z",
+        },
+        {
+          id: "p1",
+          groupId: "g1",
+          type: "TextMessage",
+          text: "current",
+          creatorId: "u1",
+          threadId: "thread-root",
+          parentPostId: "older-reply",
+          creationTime: "2026-01-01T00:02:00Z",
+          lastModifiedTime: "2026-01-01T00:02:00Z",
+        },
+      ],
+    });
+
+    await handleInboundPost({
+      post: makePost({
+        text: "![:Person](bot) follow up",
+        threadId: "thread-root",
+        parentPostId: "older-reply",
+      }),
+      cfg: {},
+      botClient,
+      account: resolveAccount({
+        botToken: "bot",
+        groupPolicy: "open",
+        requireMention: true,
+        processingPlaceholder: { enabled: false },
+      }),
+      botPersonId: "bot",
+      channelRuntime: runtime,
+      tracker: new ThreadParticipationTracker(),
+    });
+
+    expect(runtime.routing.resolveAgentRoute).toHaveBeenCalledWith(
+      expect.objectContaining({ peer: { kind: "channel", id: "g1" } }),
+    );
+    expect(runtime.reply.finalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Body: "follow up",
+        CommandBody: "follow up",
+        BodyForCommands: "follow up",
+        SessionKey: "agent:main:ringcentral:channel:g1:thread:thread-root",
+        ReplyToId: "older-reply",
+        RootMessageId: "thread-root",
+        BodyForAgent: expect.stringContaining("[RingCentral thread context]"),
+      }),
+    );
+    const ctx = runtime.reply.finalizeInboundContext.mock.calls[0][0];
+    expect(ctx.BodyForAgent).toContain("root question");
+    expect(ctx.BodyForAgent).toContain("earlier reply");
+    expect(ctx.BodyForAgent).toContain("follow up");
+    expect(ctx.BodyForAgent).not.toContain("\ncurrent\n");
+    expect(ctx.Body).toBe("follow up");
+  });
+
+  it("uses distinct thread session keys for different threads in the same chat", async () => {
+    const runtime = makeRuntime();
+    const botClient = makeClient();
+    const account = resolveAccount({
+      botToken: "bot",
+      groupPolicy: "open",
+      requireMention: false,
+      processingPlaceholder: { enabled: false },
+    });
+
+    await handleInboundPost({
+      post: makePost({ id: "a1", text: "thread a", threadId: "thread-a" }),
+      cfg: {},
+      botClient,
+      account,
+      botPersonId: "bot",
+      channelRuntime: runtime,
+      tracker: new ThreadParticipationTracker(),
+    });
+    await handleInboundPost({
+      post: makePost({ id: "b1", text: "thread b", threadId: "thread-b" }),
+      cfg: {},
+      botClient,
+      account,
+      botPersonId: "bot",
+      channelRuntime: runtime,
+      tracker: new ThreadParticipationTracker(),
+    });
+
+    const keys = runtime.reply.finalizeInboundContext.mock.calls.map(
+      ([ctx]: [{ SessionKey: string }]) => ctx.SessionKey,
+    );
+    expect(keys).toEqual([
+      "agent:main:ringcentral:channel:g1:thread:thread-a",
+      "agent:main:ringcentral:channel:g1:thread:thread-b",
+    ]);
+  });
+
+  it("still dispatches when thread history lookup fails", async () => {
+    const runtime = makeRuntime();
+    const botClient = makeClient();
+    botClient.listThreadPosts.mockRejectedValue(new Error("thread api down"));
+    botClient.listPosts.mockRejectedValue(new Error("chat api down"));
+    botClient.listLegacyGroupPosts.mockRejectedValue(new Error("legacy down"));
+
+    await handleInboundPost({
+      post: makePost({
+        text: "![:Person](bot) still answer",
+        threadId: "thread-root",
+      }),
+      cfg: {},
+      botClient,
+      account: resolveAccount({
+        botToken: "bot",
+        groupPolicy: "open",
+        requireMention: true,
+        processingPlaceholder: { enabled: false },
+      }),
+      botPersonId: "bot",
+      channelRuntime: runtime,
+      tracker: new ThreadParticipationTracker(),
+    });
+
+    expect(runtime.reply.dispatchReplyWithBufferedBlockDispatcher).toHaveBeenCalledOnce();
+    expect(runtime.reply.finalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Body: "still answer",
+        BodyForAgent: "still answer",
+        SessionKey: "agent:main:ringcentral:channel:g1:thread:thread-root",
+      }),
     );
   });
 
@@ -600,6 +759,83 @@ describe("handleInboundPost", () => {
         MediaPaths: ["/tmp/openclaw/media/inbound/image---saved.png"],
       }),
     );
+  });
+
+  it("creates a typing post at dispatch start when enabled, without waiting for onReplyStart", async () => {
+    const runtime = makeRuntime();
+    const client = makeClient();
+    const log = vi.fn();
+    // Simulate typingMode=message: OpenClaw never calls onReplyStart while the
+    // agent is still processing (approval wait / tools with no renderable text).
+    runtime.reply.dispatchReplyWithBufferedBlockDispatcher.mockImplementationOnce(async (params: any) => {
+      await params.dispatcherOptions.deliver({ text: "final reply" });
+      await params.dispatcherOptions.onCleanup();
+      return { queuedFinal: false, counts: {} };
+    });
+
+    await handleInboundPost({
+      post: makePost({ groupId: "typing-early-start-chat" }),
+      cfg: {},
+      botClient: client,
+      account: resolveAccount({
+        botToken: "bot",
+        groupPolicy: "open",
+        requireMention: false,
+        processingPlaceholder: { enabled: true },
+      }),
+      botPersonId: "bot",
+      channelRuntime: runtime,
+      tracker: new ThreadParticipationTracker(),
+      log,
+    });
+
+    expect(client.sendPost).toHaveBeenCalledTimes(2);
+    expect(client.sendPost).toHaveBeenNthCalledWith(1, "typing-early-start-chat", "\u{1F440}", {
+      parentPostId: "p1",
+    });
+    expect(client.sendPost).toHaveBeenNthCalledWith(2, "typing-early-start-chat", "final reply", {
+      parentPostId: "p1",
+    });
+    expect(client.deletePost).toHaveBeenCalledWith("typing-early-start-chat", "sent-1");
+    expect(
+      loggedMessages(log).some((m) =>
+        m.includes("created typing post postId=sent-1 chatId=typing-early-start-chat"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not create a second typing post when onReplyStart fires after early start", async () => {
+    const runtime = makeRuntime();
+    const client = makeClient();
+    runtime.reply.dispatchReplyWithBufferedBlockDispatcher.mockImplementationOnce(async (params: any) => {
+      await params.dispatcherOptions.onReplyStart();
+      await params.dispatcherOptions.onReplyStart();
+      await params.dispatcherOptions.deliver({ text: "final reply" });
+      await params.dispatcherOptions.onCleanup();
+      return { queuedFinal: false, counts: {} };
+    });
+
+    await handleInboundPost({
+      post: makePost({ groupId: "typing-dedupe-chat" }),
+      cfg: {},
+      botClient: client,
+      account: resolveAccount({
+        botToken: "bot",
+        groupPolicy: "open",
+        requireMention: false,
+        processingPlaceholder: { enabled: true },
+      }),
+      botPersonId: "bot",
+      channelRuntime: runtime,
+      tracker: new ThreadParticipationTracker(),
+    });
+
+    // Early start + two onReplyStart calls must still yield one typing post + one reply.
+    expect(client.sendPost).toHaveBeenCalledTimes(2);
+    expect(client.sendPost).toHaveBeenNthCalledWith(1, "typing-dedupe-chat", "\u{1F440}", {
+      parentPostId: "p1",
+    });
+    expect(client.deletePost).toHaveBeenCalledTimes(1);
   });
 
   it("edits the typing emoji once, deletes it before the actual reply, and does not edit it into reply text", async () => {

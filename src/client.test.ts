@@ -163,6 +163,39 @@ describe("RingCentralClient", () => {
       );
     });
 
+    it("listThreadPosts uses team-messaging threads endpoint", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse({ records: [{ id: "p1" }] }));
+      const result = await client.listThreadPosts("thread-1", 20);
+      expect(result.records).toHaveLength(1);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://api.example.com/team-messaging/v1/threads/thread-1/posts?recordCount=20",
+        expect.anything(),
+      );
+    });
+
+    it("listThreadPosts falls back to legacy glip threads endpoint", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 404,
+          text: () => Promise.resolve("not found"),
+          headers: { get: () => null },
+        })
+        .mockResolvedValueOnce(jsonResponse({ records: [{ id: "p2" }] }));
+      const result = await client.listThreadPosts("thread-2", 5);
+      expect(result.records).toHaveLength(1);
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        "https://api.example.com/team-messaging/v1/threads/thread-2/posts?recordCount=5",
+        expect.anything(),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        "https://api.example.com/restapi/v1.0/glip/threads/thread-2/posts?recordCount=5",
+        expect.anything(),
+      );
+    });
+
     it("createWebSocketToken", async () => {
       mockFetch.mockResolvedValueOnce(jsonResponse({ uri: "wss://example", ws_access_token: "ws", expires_in: 60 }));
       await expect(client.createWebSocketToken()).resolves.toMatchObject({ uri: "wss://example" });
