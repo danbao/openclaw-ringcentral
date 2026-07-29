@@ -552,6 +552,79 @@ describe("handleInboundPost", () => {
     );
   });
 
+  it("blocks unlisted RingCentral group DMs even when mentioned", async () => {
+    const runtime = makeRuntime();
+    const log = vi.fn();
+    await handleInboundPost({
+      post: makePost({ groupId: "unlisted", text: "![:Person](bot) hello" }),
+      cfg: {},
+      botClient: makeClient("Group"),
+      account: resolveAccount({
+        botToken: "bot",
+        requireMention: true,
+        dm: { groupEnabled: true, groupChannels: { gdm1: { allow: true } } },
+        debugInboundMessages: true,
+        processingPlaceholder: { enabled: false },
+      }),
+      botPersonId: "bot",
+      channelRuntime: runtime,
+      tracker: new ThreadParticipationTracker(),
+      log,
+    });
+
+    expect(runtime.reply.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+    const drop = loggedMessages(log).find((message) => message.startsWith("[ringcentral] inbound message dropped "));
+    expect(drop).toContain('"reasonCode":"route_blocked"');
+  });
+
+  it("applies Group DM wildcard defaults before an explicit allowlist entry", async () => {
+    const runtime = makeRuntime();
+    await handleInboundPost({
+      post: makePost({ groupId: "gdm1" }),
+      cfg: {},
+      botClient: makeClient("Group"),
+      account: resolveAccount({
+        botToken: "bot",
+        dm: {
+          groupEnabled: true,
+          groupChannels: {
+            "*": { allow: false, requireMention: true },
+            gdm1: { allow: true, requireMention: false },
+          },
+        },
+        processingPlaceholder: { enabled: false },
+      }),
+      botPersonId: "bot",
+      channelRuntime: runtime,
+      tracker: new ThreadParticipationTracker(),
+    });
+
+    expect(runtime.reply.dispatchReplyWithBufferedBlockDispatcher).toHaveBeenCalledOnce();
+  });
+
+  it("applies a Group DM wildcard default-deny to unlisted conversations", async () => {
+    const runtime = makeRuntime();
+    await handleInboundPost({
+      post: makePost({ groupId: "unlisted", text: "![:Person](bot) hello" }),
+      cfg: {},
+      botClient: makeClient("Group"),
+      account: resolveAccount({
+        botToken: "bot",
+        requireMention: true,
+        dm: {
+          groupEnabled: true,
+          groupChannels: { "*": { allow: false }, gdm1: { allow: true } },
+        },
+        processingPlaceholder: { enabled: false },
+      }),
+      botPersonId: "bot",
+      channelRuntime: runtime,
+      tracker: new ThreadParticipationTracker(),
+    });
+
+    expect(runtime.reply.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+  });
+
   it("downloads admitted attachments into OpenClaw inbound media payload", async () => {
     const runtime = makeRuntime();
     const client = makeClient();

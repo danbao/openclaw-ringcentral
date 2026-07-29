@@ -455,6 +455,7 @@ ignored.
 | `teams."*"` | none | Defaults only; not an allowlist entry |
 | `dm.groupEnabled` | `false` | Enable explicit RingCentral Group DM conversations |
 | `dm.groupChannels.<chatId>.allow` | `true` when present | Enable an explicit group DM |
+| `dm.groupChannels."*"` | none | Optional defaults for Group DMs; use `{ "allow": false }` for explicit default-deny |
 | `requireMention` | `true` | Global Team/Everyone mention gate |
 | `threadRequireMention` | `true` | Require mention in thread follow-ups |
 | `replyToMode` | `first` | Threading behavior for replies: `off`, `first`, or `all` |
