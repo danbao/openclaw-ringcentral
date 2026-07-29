@@ -647,7 +647,10 @@ function buildRouteDescriptors(params: {
     }
     routes.push({
       id: `ringcentral:group-dm:${params.chatId}`,
-      configured: !!params.surface.settings,
+      // An enabled Group DM policy is always a configured route. Otherwise
+      // OpenClaw drops the descriptor before evaluating its deny decision,
+      // which lets an unlisted Group DM fall through to sender auth.
+      configured: true,
       matched: true,
       allowed: !!params.surface.settings && params.surface.settings.allow !== false,
       blockReason: "group dm not allowlisted",
@@ -887,9 +890,21 @@ function classifyChatSurface(
     kind: "group-dm",
     chatType: "group",
     targetKind: "group",
-    settings: account.groupDmChannels[chatId],
+    settings: resolveGroupDmSettings(account, chatId),
     groupPolicy: account.groupDmEnabled ? "allowlist" : "disabled",
   };
+}
+
+function resolveGroupDmSettings(
+  account: ResolvedAccount,
+  chatId: string,
+): RingCentralGroupDmConfig | undefined {
+  const defaults = account.groupDmChannels["*"];
+  const explicit = account.groupDmChannels[chatId];
+  if (!defaults) {
+    return explicit;
+  }
+  return explicit ? { ...defaults, ...explicit } : defaults;
 }
 
 function resolveTeamSettings(
