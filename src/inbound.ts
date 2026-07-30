@@ -118,7 +118,11 @@ export async function handleInboundPost(inCtx: InboundContext): Promise<void> {
   const chatType = surface.chatType;
   const sender = await getPersonSafe(ownerClient ?? botClient ?? readClient, senderId);
 
-  if (!account.config.allowBots && assistantPersonId && senderId === assistantPersonId) {
+  // Skip the RingCentral *bot account*'s own posts when allowBots is false.
+  // In conversationIdentity="user" mode, assistantPersonId is the owner — owner
+  // messages must still be admitted; outbound echoes are filtered via markOwnPost /
+  // ANSWER_START / ignoredTexts in the WebSocket monitor.
+  if (!account.config.allowBots && inCtx.botPersonId && senderId === inCtx.botPersonId) {
     return;
   }
 
