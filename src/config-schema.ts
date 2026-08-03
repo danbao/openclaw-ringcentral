@@ -32,6 +32,12 @@ const attachmentsSchema = z.object({
   maxBytes: z.number().int().min(1).max(100 * 1024 * 1024).optional(),
 });
 
+const reportUploadsSchema = z.object({
+  enabled: z.boolean().optional(),
+  rootDir: z.string().min(1).optional(),
+  maxBytes: z.number().int().min(1).max(100 * 1024 * 1024).optional(),
+});
+
 const dmSchema = z
   .object({
     groupEnabled: z.boolean().optional(),
@@ -96,6 +102,7 @@ export const ringCentralConfigSchema = z.object({
   replyToMode: z.enum(["off", "first", "all"]).optional(),
   processingPlaceholder: processingPlaceholderSchema.optional(),
   attachments: attachmentsSchema.optional(),
+  reportUploads: reportUploadsSchema.optional(),
   debugInboundMessages: z.boolean().optional(),
   historyMessageLimit: z.number().int().min(1).max(1000).optional(),
   homeChannel: z.string().optional(),

@@ -11,6 +11,7 @@
   "contracts": {
     "tools": [
       "ringcentral_get_recent_messages",
+      "ringcentral_upload_log_report",
       "ringcentral_confirm_artifact_action",
       "ringcentral_create_adaptive_card",
       "ringcentral_get_adaptive_card",
@@ -31,6 +32,9 @@
   },
   "toolMetadata": {
     "ringcentral_get_recent_messages": {
+      "optional": true
+    },
+    "ringcentral_upload_log_report": {
       "optional": true
     },
     "ringcentral_confirm_artifact_action": {
@@ -148,6 +152,23 @@
     },
     "attachments.maxBytes": {
       "label": "Max Attachment Bytes",
+      "advanced": true
+    },
+    "reportUploads": {
+      "label": "Log Report Uploads",
+      "help": "Allow the optional report tool to upload validated HTML files from one configured local directory.",
+      "advanced": true
+    },
+    "reportUploads.enabled": {
+      "label": "Enable Log Report Uploads",
+      "advanced": true
+    },
+    "reportUploads.rootDir": {
+      "label": "Log Report Directory",
+      "advanced": true
+    },
+    "reportUploads.maxBytes": {
+      "label": "Max Log Report Bytes",
       "advanced": true
     },
     "debugInboundMessages": {
@@ -382,6 +403,24 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 20
+          },
+          "maxBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 104857600
+          }
+        }
+      },
+      "reportUploads": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "rootDir": {
+            "type": "string",
+            "minLength": 1
           },
           "maxBytes": {
             "type": "integer",
@@ -663,6 +702,24 @@
               }
             }
           },
+          "reportUploads": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "rootDir": {
+                "type": "string",
+                "minLength": 1
+              },
+              "maxBytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 104857600
+              }
+            }
+          },
           "debugInboundMessages": {
             "type": "boolean"
           },
@@ -874,6 +931,23 @@
         },
         "attachments.maxBytes": {
           "label": "Max Attachment Bytes",
+          "advanced": true
+        },
+        "reportUploads": {
+          "label": "Log Report Uploads",
+          "help": "Allow the optional report tool to upload validated HTML files from one configured local directory.",
+          "advanced": true
+        },
+        "reportUploads.enabled": {
+          "label": "Enable Log Report Uploads",
+          "advanced": true
+        },
+        "reportUploads.rootDir": {
+          "label": "Log Report Directory",
+          "advanced": true
+        },
+        "reportUploads.maxBytes": {
+          "label": "Max Log Report Bytes",
           "advanced": true
         },
         "debugInboundMessages": {

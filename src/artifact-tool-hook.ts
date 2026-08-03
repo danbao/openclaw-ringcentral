@@ -1,5 +1,10 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { RINGCENTRAL_ARTIFACT_TOOL_NAMES } from "./artifact-tools.js";
+import { getRingCentralNativeChatId } from "./conversation-context.js";
+import {
+  RINGCENTRAL_REPORT_TARGET_PARAM,
+  RINGCENTRAL_REPORT_UPLOAD_TOOL_NAME,
+} from "./report-upload-tool.js";
 
 type BeforeToolCallEvent = {
   toolName: string;
@@ -30,6 +35,18 @@ export function injectRingCentralArtifactToolChatId(
   event: BeforeToolCallEvent,
   ctx: BeforeToolCallContext,
 ): { params: Record<string, unknown> } | void {
+  if (event.toolName === RINGCENTRAL_REPORT_UPLOAD_TOOL_NAME) {
+    const target = resolveRingCentralSessionTarget(ctx);
+    if (!target) {
+      return;
+    }
+    return {
+      params: {
+        ...event.params,
+        [RINGCENTRAL_REPORT_TARGET_PARAM]: target,
+      },
+    };
+  }
   if (!AUTO_TARGET_TOOL_NAMES.has(event.toolName)) {
     return;
   }
@@ -46,6 +63,28 @@ export function injectRingCentralArtifactToolChatId(
       chat_id: chatId,
     },
   };
+}
+
+function resolveRingCentralSessionTarget(ctx: BeforeToolCallContext): string | undefined {
+  const rememberedChatId = getRingCentralNativeChatId(readString(ctx.sessionKey));
+  if (rememberedChatId) {
+    return `channel:${rememberedChatId}`;
+  }
+  const nativeChannelId = readString(ctx.channelId);
+  if (nativeChannelId && nativeChannelId !== "ringcentral") {
+    return `channel:${nativeChannelId}`;
+  }
+  const raw = readString(ctx.sessionKey);
+  if (!raw) return undefined;
+  const directMarker = ":ringcentral:direct:";
+  const directIndex = raw.toLowerCase().indexOf(directMarker);
+  if (directIndex !== -1) {
+    // A person ID is not a RingCentral chat/group ID. Direct uploads require
+    // the native chat ID remembered from the current trusted inbound event.
+    return undefined;
+  }
+  const chatId = readRingCentralGroupOrChannelSessionId(ctx.sessionKey);
+  return chatId ? `channel:${chatId.split(":sender:", 1)[0]}` : undefined;
 }
 
 function hasExplicitArtifactTarget(params: Record<string, unknown>): boolean {
@@ -73,7 +112,10 @@ function readRingCentralGroupOrChannelSessionId(sessionKey: unknown): string | u
     const start = markerIndex + marker.length;
     const rawId = raw.slice(start);
     const threadIndex = rawId.toLowerCase().lastIndexOf(":thread:");
-    return (threadIndex === -1 ? rawId : rawId.slice(0, threadIndex)).trim() || undefined;
+    const senderIndex = rawId.toLowerCase().lastIndexOf(":sender:");
+    const suffixIndexes = [threadIndex, senderIndex].filter((index) => index !== -1);
+    const suffixIndex = suffixIndexes.length ? Math.min(...suffixIndexes) : -1;
+    return (suffixIndex === -1 ? rawId : rawId.slice(0, suffixIndex)).trim() || undefined;
   }
   return undefined;
 }

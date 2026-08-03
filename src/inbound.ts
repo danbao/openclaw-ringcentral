@@ -6,6 +6,7 @@ import type {
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-runtime";
 import { resolveInboundAttachmentsForAgent } from "./attachments.js";
 import { RingCentralApiError, type RingCentralClient } from "./client.js";
+import { rememberRingCentralNativeChatId } from "./conversation-context.js";
 import { sendMessage, sendTypingIndicator, updateMessage } from "./send.js";
 import { RINGCENTRAL_CHANNEL_ID } from "./shared.js";
 import { buildChannelTarget, buildGroupTarget, buildTeamTarget, buildUserTarget } from "./targets.js";
@@ -248,6 +249,7 @@ export async function handleInboundPost(inCtx: InboundContext): Promise<void> {
       peer,
     });
   const target = buildInboundTarget({ surface, chatId, senderId });
+  rememberRingCentralNativeChatId(route.sessionKey, chatId);
   const fallbackReplyRuntime =
     runtime.reply?.finalizeInboundContext && runtime.reply?.dispatchReplyWithBufferedBlockDispatcher
       ? null

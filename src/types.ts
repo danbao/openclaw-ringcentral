@@ -204,6 +204,12 @@ export interface AttachmentDownloadConfig {
   maxBytes?: number;
 }
 
+export interface ReportUploadConfig {
+  enabled?: boolean;
+  rootDir?: string;
+  maxBytes?: number;
+}
+
 export type RingCentralDmPolicy = "disabled" | "allowlist" | "pairing" | "open";
 export type RingCentralGroupPolicy = "disabled" | "allowlist" | "open";
 
@@ -245,6 +251,7 @@ export interface RingCentralConfig {
   replyToMode?: RingCentralReplyToMode;
   processingPlaceholder?: ProcessingPlaceholderConfig;
   attachments?: AttachmentDownloadConfig;
+  reportUploads?: ReportUploadConfig;
   debugInboundMessages?: boolean;
   historyMessageLimit?: number;
   homeChannel?: string;

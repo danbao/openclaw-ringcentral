@@ -45,6 +45,8 @@ describe("ringCentralConfigSchema", () => {
         delayedText: "delay",
         editDelaySeconds: 3,
       },
+      attachments: { enabled: true, maxCount: 5, maxBytes: 5242880 },
+      reportUploads: { enabled: true, rootDir: "/srv/openclaw/reports", maxBytes: 5242880 },
       debugInboundMessages: true,
       historyMessageLimit: 250,
       homeChannel: "g-home",
@@ -99,6 +101,15 @@ describe("ringCentralConfigSchema", () => {
   it("rejects negative textChunkLimit", () => {
     const result = ringCentralConfigSchema.safeParse({ textChunkLimit: -10 });
     expect(result.success).toBe(false);
+  });
+
+  it("rejects invalid report upload limits and empty roots", () => {
+    expect(
+      ringCentralConfigSchema.safeParse({ reportUploads: { rootDir: "" } }).success,
+    ).toBe(false);
+    expect(
+      ringCentralConfigSchema.safeParse({ reportUploads: { maxBytes: 0 } }).success,
+    ).toBe(false);
   });
 
   it("accepts valid team config with mixed user ID types", () => {

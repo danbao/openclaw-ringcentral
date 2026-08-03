@@ -14,6 +14,7 @@ import { createRingCentralArtifactTools } from "./artifact-tools.js";
 import { createBotClient, createOwnerClient, type RingCentralClient } from "./client.js";
 import { ringCentralConfigSchema } from "./config-schema.js";
 import { createRingCentralHistoryTool } from "./history-tool.js";
+import { createRingCentralReportUploadTool } from "./report-upload-tool.js";
 import { handleInboundPost } from "./inbound.js";
 import { chunkText } from "./markdown.js";
 import { RingCentralWebSocketMonitor } from "./monitor.js";
@@ -347,6 +348,7 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedAccount> = {
   actions: ringCentralMessageActions,
   agentTools: ({ cfg }) => [
     createRingCentralHistoryTool(cfg),
+    createRingCentralReportUploadTool(cfg),
     ...createRingCentralArtifactTools(cfg),
   ],
 };
