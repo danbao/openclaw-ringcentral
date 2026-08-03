@@ -30,6 +30,13 @@ beforeEach(() => {
 });
 
 describe("ringcentralPlugin outbound targets", () => {
+  it("registers the optional secure report upload tool", () => {
+    const tools = (ringcentralPlugin.agentTools as Function)({ cfg: cfg() });
+    expect(tools.map((tool: { name: string }) => tool.name)).toContain(
+      "ringcentral_upload_log_report",
+    );
+  });
+
   it("creates or finds a DM before sending to user targets", async () => {
     mockFetch
       .mockResolvedValueOnce(jsonResponse({ id: "dm-chat-1", type: "Direct" }))

@@ -19,7 +19,7 @@ It supports:
 - Threaded replies, mention gates, per-chat user allowlists, and per-chat system prompts.
 - Inbound file/image attachment download into OpenClaw managed media storage.
 - Shared OpenClaw `message` actions for send/read/edit/delete/channel-info.
-- Optional `ringcentral_get_recent_messages`, Adaptive Card, note, and calendar event tools.
+- Optional history, secure HTML report upload, Adaptive Card, note, and calendar event tools.
 
 RingCentral `Team` chats are topic-oriented chats, while `Group` conversations
 are member-set conversations. See the RingCentral Team Messaging
@@ -338,6 +338,45 @@ fall back to the plugin runtime's full OpenClaw config before reading
 `RC_TEAMS` or `RC_GROUP_DM_CHANNELS`. Normal JSON config under
 `channels.ringcentral` therefore remains authoritative for artifact allowlists.
 
+### Secure HTML Report Uploads
+
+The optional `ringcentral_upload_log_report` tool uploads a report only to the
+current RingCentral conversation. It does not accept a target or chat ID from
+the model. Team and Group targets use the current chat ID; direct-message
+targets create or find the current sender's DM before upload.
+
+Report upload is disabled by default. Configure one dedicated directory and
+allowlist the optional tool on the RingCentral agent:
+
+```json
+{
+  "channels": {
+    "ringcentral": {
+      "reportUploads": {
+        "enabled": true,
+        "rootDir": "/srv/openclaw/reports",
+        "maxBytes": 5242880
+      }
+    }
+  },
+  "agents": {
+    "list": [
+      {
+        "id": "ringcentral-bot",
+        "tools": {
+          "allow": ["ringcentral_upload_log_report"]
+        }
+      }
+    ]
+  }
+}
+```
+
+Accepted files must be regular, self-contained HTML documents named
+`report-<32 lowercase hex>.html` directly inside `rootDir`. Path traversal,
+escaping symlinks, remote scripts/content, forms, embedded objects, and files
+over `maxBytes` are rejected.
+
 ### Owner Credentials And Home Confirmation
 
 ```json
@@ -403,6 +442,7 @@ channel is configured:
 | Tool family | Tool names |
 | --- | --- |
 | History | `ringcentral_get_recent_messages` |
+| Log reports | `ringcentral_upload_log_report` |
 | Adaptive Cards | `ringcentral_create_adaptive_card`, `ringcentral_get_adaptive_card`, `ringcentral_update_adaptive_card`, `ringcentral_delete_adaptive_card` |
 | Notes | `ringcentral_list_notes`, `ringcentral_create_note`, `ringcentral_get_note`, `ringcentral_update_note`, `ringcentral_delete_note`, `ringcentral_publish_note` |
 | Calendar Events | `ringcentral_list_calendar_events`, `ringcentral_create_calendar_event`, `ringcentral_get_calendar_event`, `ringcentral_update_calendar_event`, `ringcentral_delete_calendar_event` |
@@ -459,6 +499,9 @@ ignored.
 | `threadRequireMention` | `true` | Require mention in thread follow-ups |
 | `replyToMode` | `first` | Threading behavior for replies: `off`, `first`, or `all` |
 | `attachments.enabled` | `true` | Download admitted RingCentral file/image attachments |
+| `reportUploads.enabled` | `false` | Enable the current-conversation HTML report upload tool |
+| `reportUploads.rootDir` | none | Dedicated directory containing opaque HTML report basenames |
+| `reportUploads.maxBytes` | `5242880` | Maximum report size, capped at 100 MiB |
 | `processingPlaceholder.enabled` | `false` | Show a placeholder while the agent is processing |
 | `debugInboundMessages` | `false` | Log inbound message metadata for troubleshooting |
 | `allowBots` | `false` | Allow bot-authored inbound messages |

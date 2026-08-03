@@ -4,6 +4,15 @@
 export function markdownToMiniMarkdown(text: string): string {
   let result = text;
 
+  // RingCentral typed mentions overlap with Markdown image syntax
+  // (`![:Person](id)`). Shield them while converting Markdown so replies can
+  // mention the original sender without being reduced to plain `:Person`.
+  const typedMentions: string[] = [];
+  result = result.replace(/!\[:([A-Za-z]+)\]\(([^)]+)\)/g, (mention) => {
+    const index = typedMentions.push(mention) - 1;
+    return `\u0000RC_TYPED_MENTION_${index}\u0000`;
+  });
+
   // Convert headers to bold
   result = result.replace(/^#{1,6}\s+(.+)$/gm, "**$1**");
 
@@ -31,6 +40,11 @@ export function markdownToMiniMarkdown(text: string): string {
 
   // Clean up excessive blank lines
   result = result.replace(/\n{3,}/g, "\n\n");
+
+  result = result.replace(
+    /\u0000RC_TYPED_MENTION_(\d+)\u0000/g,
+    (_match, rawIndex) => typedMentions[Number(rawIndex)] ?? "",
+  );
 
   return result.trim();
 }

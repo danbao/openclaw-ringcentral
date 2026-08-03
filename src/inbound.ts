@@ -6,6 +6,7 @@ import type {
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-runtime";
 import { resolveInboundAttachmentsForAgent } from "./attachments.js";
 import { RingCentralApiError, type RingCentralClient } from "./client.js";
+import { rememberRingCentralNativeChatId } from "./conversation-context.js";
 import { sendMessage, sendTypingIndicator, updateMessage } from "./send.js";
 import { RINGCENTRAL_CHANNEL_ID } from "./shared.js";
 import { buildChannelTarget, buildGroupTarget, buildTeamTarget, buildUserTarget } from "./targets.js";
@@ -226,9 +227,13 @@ export async function handleInboundPost(inCtx: InboundContext): Promise<void> {
     log,
   });
   const runtime = (inCtx.channelRuntime ?? {}) as ChannelRuntimeLike;
+  // Keep public Team and group-DM history isolated by sender while retaining
+  // the native transport chat ID separately in the finalized context.
+  const peerId =
+    chatType === "direct" ? senderId : senderId ? `${chatId}:sender:${senderId}` : chatId;
   const peer = {
     kind: chatType,
-    id: chatType === "direct" ? senderId : chatId,
+    id: peerId,
   };
   const route =
     runtime.routing?.resolveAgentRoute?.({
@@ -244,6 +249,7 @@ export async function handleInboundPost(inCtx: InboundContext): Promise<void> {
       peer,
     });
   const target = buildInboundTarget({ surface, chatId, senderId });
+  rememberRingCentralNativeChatId(route.sessionKey, chatId);
   const fallbackReplyRuntime =
     runtime.reply?.finalizeInboundContext && runtime.reply?.dispatchReplyWithBufferedBlockDispatcher
       ? null
@@ -309,6 +315,7 @@ export async function handleInboundPost(inCtx: InboundContext): Promise<void> {
         ownerClient,
         account,
         chatId,
+        senderId,
         sourcePostId: post.id,
         sourceThreadId: post.threadId,
         tracker,
@@ -396,6 +403,7 @@ function createDispatcherOptions(params: {
   ownerClient?: RingCentralClient;
   account: ResolvedAccount;
   chatId: string;
+  senderId?: string;
   sourcePostId: string;
   sourceThreadId?: string | number | null;
   tracker: ThreadParticipationTracker;
@@ -603,6 +611,7 @@ async function sendReplyText(
     ownerClient?: RingCentralClient;
     account: ResolvedAccount;
     chatId: string;
+    senderId?: string;
     sourcePostId: string;
     sourceThreadId?: string | number | null;
     tracker: ThreadParticipationTracker;
@@ -610,11 +619,16 @@ async function sendReplyText(
   },
   text: string,
 ) {
+  const senderMention = params.senderId ? `![:Person](${params.senderId})` : "";
+  const replyText =
+    senderMention && !text.trimStart().startsWith(senderMention)
+      ? `${senderMention} ${text}`
+      : text;
   await sendMessage({
     client: params.botClient,
     fallbackClient: params.ownerClient,
     chatId: params.chatId,
-    text,
+    text: replyText,
     replyToId: params.sourcePostId,
     threadId: params.sourceThreadId,
     replyToMode: params.account.replyToMode,

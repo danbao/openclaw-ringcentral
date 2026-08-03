@@ -125,7 +125,42 @@ describe("handleInboundPost", () => {
       }),
     );
     expect(runtime.routing.resolveAgentRoute).toHaveBeenCalledWith(
-      expect.objectContaining({ peer: { kind: "channel", id: "g1" } }),
+      expect.objectContaining({ peer: { kind: "channel", id: "g1:sender:u1" } }),
+    );
+  });
+
+  it("isolates Team sessions by sender and mentions that sender in replies", async () => {
+    const runtime = makeRuntime();
+    runtime.reply.dispatchReplyWithBufferedBlockDispatcher.mockImplementationOnce(
+      async ({ dispatcherOptions }: any) => {
+        await dispatcherOptions.deliver({ text: "result" });
+        return { queuedFinal: true, counts: {} };
+      },
+    );
+    const client = makeClient();
+
+    await handleInboundPost({
+      post: makePost({ groupId: "team-1", creatorId: "person-1" }),
+      cfg: {},
+      botClient: client,
+      account: resolveAccount({
+        botToken: "bot",
+        groupPolicy: "open",
+        requireMention: false,
+        processingPlaceholder: { enabled: false },
+      }),
+      botPersonId: "bot",
+      channelRuntime: runtime,
+      tracker: new ThreadParticipationTracker(),
+    });
+
+    expect(runtime.routing.resolveAgentRoute).toHaveBeenCalledWith(
+      expect.objectContaining({ peer: { kind: "channel", id: "team-1:sender:person-1" } }),
+    );
+    expect(client.sendPost).toHaveBeenCalledWith(
+      "team-1",
+      "![:Person](person-1) result",
+      expect.any(Object),
     );
   });
 
@@ -645,7 +680,7 @@ describe("handleInboundPost", () => {
       );
       expect(client.deletePost).toHaveBeenCalledTimes(1);
       expect(client.deletePost).toHaveBeenCalledWith("typing-lifecycle-chat", "sent-1");
-      expect(client.sendPost).toHaveBeenNthCalledWith(2, "typing-lifecycle-chat", "final reply", {
+      expect(client.sendPost).toHaveBeenNthCalledWith(2, "typing-lifecycle-chat", "![:Person](u1) final reply", {
         parentPostId: "p1",
       });
       expect(client.deletePost.mock.invocationCallOrder[0]).toBeLessThan(
@@ -762,7 +797,7 @@ describe("handleInboundPost", () => {
     });
 
     expect(client.sendPost).toHaveBeenCalledTimes(1);
-    expect(client.sendPost).toHaveBeenCalledWith("typing-disabled-chat", "final reply", {
+    expect(client.sendPost).toHaveBeenCalledWith("typing-disabled-chat", "![:Person](u1) final reply", {
       parentPostId: "p1",
     });
     expect(client.updatePost).not.toHaveBeenCalled();
@@ -804,7 +839,7 @@ describe("handleInboundPost", () => {
       // Retry once, then give up; total 2 deletePost calls.
       expect(client.deletePost).toHaveBeenCalledTimes(2);
       expect(client.sendPost).toHaveBeenCalledTimes(2);
-      expect(client.sendPost).toHaveBeenNthCalledWith(2, "typing-stuck-chat", "final reply", {
+      expect(client.sendPost).toHaveBeenNthCalledWith(2, "typing-stuck-chat", "![:Person](u1) final reply", {
         parentPostId: "p1",
       });
       const messages = loggedMessages(log);

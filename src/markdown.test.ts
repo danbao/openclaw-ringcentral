@@ -57,6 +57,15 @@ describe("markdownToMiniMarkdown", () => {
   it("preserves plain text", () => {
     expect(markdownToMiniMarkdown("hello world")).toBe("hello world");
   });
+
+  it("preserves RingCentral typed mentions", () => {
+    expect(markdownToMiniMarkdown("![:Person](12345) hello")).toBe(
+      "![:Person](12345) hello",
+    );
+    expect(markdownToMiniMarkdown("![:Team](67890) update")).toBe(
+      "![:Team](67890) update",
+    );
+  });
 });
 
 describe("chunkText", () => {
