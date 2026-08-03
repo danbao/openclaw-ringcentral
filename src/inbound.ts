@@ -226,9 +226,13 @@ export async function handleInboundPost(inCtx: InboundContext): Promise<void> {
     log,
   });
   const runtime = (inCtx.channelRuntime ?? {}) as ChannelRuntimeLike;
+  // Keep public Team and group-DM history isolated by sender while retaining
+  // the native transport chat ID separately in the finalized context.
+  const peerId =
+    chatType === "direct" ? senderId : senderId ? `${chatId}:sender:${senderId}` : chatId;
   const peer = {
     kind: chatType,
-    id: chatType === "direct" ? senderId : chatId,
+    id: peerId,
   };
   const route =
     runtime.routing?.resolveAgentRoute?.({
@@ -309,6 +313,7 @@ export async function handleInboundPost(inCtx: InboundContext): Promise<void> {
         ownerClient,
         account,
         chatId,
+        senderId,
         sourcePostId: post.id,
         sourceThreadId: post.threadId,
         tracker,
@@ -396,6 +401,7 @@ function createDispatcherOptions(params: {
   ownerClient?: RingCentralClient;
   account: ResolvedAccount;
   chatId: string;
+  senderId?: string;
   sourcePostId: string;
   sourceThreadId?: string | number | null;
   tracker: ThreadParticipationTracker;
@@ -603,6 +609,7 @@ async function sendReplyText(
     ownerClient?: RingCentralClient;
     account: ResolvedAccount;
     chatId: string;
+    senderId?: string;
     sourcePostId: string;
     sourceThreadId?: string | number | null;
     tracker: ThreadParticipationTracker;
@@ -610,11 +617,16 @@ async function sendReplyText(
   },
   text: string,
 ) {
+  const senderMention = params.senderId ? `![:Person](${params.senderId})` : "";
+  const replyText =
+    senderMention && !text.trimStart().startsWith(senderMention)
+      ? `${senderMention} ${text}`
+      : text;
   await sendMessage({
     client: params.botClient,
     fallbackClient: params.ownerClient,
     chatId: params.chatId,
-    text,
+    text: replyText,
     replyToId: params.sourcePostId,
     threadId: params.sourceThreadId,
     replyToMode: params.account.replyToMode,
