@@ -120,6 +120,9 @@ export const ringcentralPlugin: ChannelPlugin<ResolvedAccount> = {
           tracker: state.tracker,
           markOwnPost,
           log: (message) => ctx.log?.info(message) ?? console.log(message),
+          reportAuthFailure: (message) => {
+            setStatus({ accountId, connected: false, lastError: message } as never);
+          },
         });
       };
 
