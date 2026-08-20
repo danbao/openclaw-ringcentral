@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveAccount } from "./accounts.js";
+import { RingCentralApiError } from "./client.js";
 import { handleInboundPost, stripRcMentions } from "./inbound.js";
 import { ThreadParticipationTracker } from "./threading.js";
 import type { Post } from "./types.js";
@@ -127,6 +128,39 @@ describe("handleInboundPost", () => {
     expect(runtime.routing.resolveAgentRoute).toHaveBeenCalledWith(
       expect.objectContaining({ peer: { kind: "channel", id: "g1" } }),
     );
+  });
+
+  it("reports persistent 401 reply failures to the channel status callback", async () => {
+    const runtime = makeRuntime();
+    runtime.reply.dispatchReplyWithBufferedBlockDispatcher = vi.fn(async (args: any) => {
+      args.dispatcherOptions.onError(
+        new RingCentralApiError(401, '{"errorCode":"TokenInvalid"}'),
+        { kind: "final" },
+      );
+      return { queuedFinal: false, counts: {} };
+    });
+    const reportAuthFailure = vi.fn();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await handleInboundPost({
+        post: makePost(),
+        cfg: {},
+        botClient: makeClient(),
+        account: resolveAccount({
+          botToken: "bot",
+          groupPolicy: "open",
+          requireMention: false,
+          processingPlaceholder: { enabled: false },
+        }),
+        botPersonId: "bot",
+        channelRuntime: runtime,
+        tracker: new ThreadParticipationTracker(),
+        reportAuthFailure,
+      });
+    } finally {
+      errorSpy.mockRestore();
+    }
+    expect(reportAuthFailure).toHaveBeenCalledWith(expect.stringContaining("HTTP 401"));
   });
 
   it("requires mentions by default when groupPolicy is open", async () => {
